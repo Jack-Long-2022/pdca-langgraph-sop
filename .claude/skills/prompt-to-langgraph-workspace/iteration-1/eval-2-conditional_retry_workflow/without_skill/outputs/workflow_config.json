@@ -1,0 +1,217 @@
+{
+  "workflow_name": "conditional_retry_workflow",
+  "description": "自动化数据搜索、分析和报告生成工作流，包含条件逻辑和重试机制",
+  "version": "1.0.0",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "name": "开始",
+      "outputs": ["search_data"]
+    },
+    {
+      "id": "search_data",
+      "type": "action",
+      "name": "搜索数据",
+      "action_type": "search",
+      "config": {
+        "max_retries": 3,
+        "retry_delay": 1000,
+        "backoff_multiplier": 2,
+        "timeout": 30000
+      },
+      "outputs": ["check_search_success"],
+      "on_error": "retry_search"
+    },
+    {
+      "id": "retry_search",
+      "type": "conditional",
+      "name": "重试逻辑",
+      "condition": "retry_count < max_retries",
+      "condition_type": "expression",
+      "true_branch": "search_data",
+      "false_branch": "handle_failure",
+      "config": {
+        "increment_retry_count": true
+      }
+    },
+    {
+      "id": "check_search_success",
+      "type": "conditional",
+      "name": "检查搜索结果",
+      "condition": "search_success == true",
+      "condition_type": "expression",
+      "true_branch": "analyze_results",
+      "false_branch": "retry_search"
+    },
+    {
+      "id": "analyze_results",
+      "type": "action",
+      "name": "分析结果",
+      "action_type": "analyze",
+      "config": {
+        "analysis_type": "data_analysis",
+        "timeout": 60000
+      },
+      "outputs": ["generate_report"],
+      "on_error": "handle_analysis_error"
+    },
+    {
+      "id": "generate_report",
+      "type": "action",
+      "name": "生成报告",
+      "action_type": "generate",
+      "config": {
+        "report_format": "json",
+        "include_timestamp": true,
+        "include_retry_count": true
+      },
+      "outputs": ["end"]
+    },
+    {
+      "id": "handle_analysis_error",
+      "type": "action",
+      "name": "处理分析错误",
+      "action_type": "error_handler",
+      "config": {
+        "error_message": "分析过程中发生错误",
+        "log_error": true,
+        "continue_to_report": true
+      },
+      "outputs": ["generate_report"]
+    },
+    {
+      "id": "handle_failure",
+      "type": "action",
+      "name": "处理失败",
+      "action_type": "error_handler",
+      "config": {
+        "error_message": "搜索失败，已达到最大重试次数",
+        "log_error": true,
+        "generate_failure_report": true
+      },
+      "outputs": ["end"]
+    },
+    {
+      "id": "end",
+      "type": "end",
+      "name": "结束"
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "search_data"
+    },
+    {
+      "from": "search_data",
+      "to": "check_search_success"
+    },
+    {
+      "from": "check_search_success",
+      "to": "analyze_results",
+      "condition": "success"
+    },
+    {
+      "from": "check_search_success",
+      "to": "retry_search",
+      "condition": "failure"
+    },
+    {
+      "from": "retry_search",
+      "to": "search_data",
+      "condition": "should_retry"
+    },
+    {
+      "from": "retry_search",
+      "to": "handle_failure",
+      "condition": "max_retries_exceeded"
+    },
+    {
+      "from": "analyze_results",
+      "to": "generate_report"
+    },
+    {
+      "from": "analyze_results",
+      "to": "handle_analysis_error",
+      "condition": "error"
+    },
+    {
+      "from": "handle_analysis_error",
+      "to": "generate_report"
+    },
+    {
+      "from": "generate_report",
+      "to": "end"
+    },
+    {
+      "from": "handle_failure",
+      "to": "end"
+    }
+  ],
+  "state_schema": {
+    "search_success": {
+      "type": "boolean",
+      "default": false
+    },
+    "retry_count": {
+      "type": "integer",
+      "default": 0
+    },
+    "max_retries": {
+      "type": "integer",
+      "default": 3
+    },
+    "search_results": {
+      "type": "array",
+      "default": []
+    },
+    "analysis_results": {
+      "type": "object",
+      "default": null
+    },
+    "report": {
+      "type": "object",
+      "default": null
+    },
+    "errors": {
+      "type": "array",
+      "default": []
+    },
+    "execution_log": {
+      "type": "array",
+      "default": []
+    }
+  },
+  "retry_config": {
+    "max_retries": 3,
+    "initial_delay": 1000,
+    "max_delay": 10000,
+    "backoff_multiplier": 2,
+    "retry_on_errors": ["network_error", "timeout", "rate_limit"],
+    "retry_on_conditions": [
+      "result_count == 0",
+      "result.quality_score < 0.5"
+    ]
+  },
+  "conditional_config": {
+    "check_search_success": {
+      "condition_type": "boolean",
+      "true_actions": ["analyze_results"],
+      "false_actions": ["increment_retry", "retry_search"]
+    },
+    "retry_search": {
+      "condition_type": "comparison",
+      "operator": "less_than",
+      "left": "retry_count",
+      "right": "max_retries",
+      "true_actions": ["search_data"],
+      "false_actions": ["handle_failure"]
+    }
+  },
+  "metadata": {
+    "created_at": "2025-04-21T12:00:00Z",
+    "created_by": "workflow_generator",
+    "tags": ["conditional", "retry", "automation", "data_pipeline"]
+  }
+}

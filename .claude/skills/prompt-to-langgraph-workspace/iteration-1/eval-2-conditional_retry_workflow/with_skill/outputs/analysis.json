@@ -1,0 +1,323 @@
+{
+  "input_summary": "用户需要一个自动化工作流，包含数据搜索、条件判断（成功/失败）、失败重试（最多3次）、结果分析和报告生成等步骤",
+
+  "identified_nodes": [
+    {
+      "node_name": "数据搜索",
+      "source_text": "先搜索数据",
+      "inference_type": "explicit",
+      "confidence": 1.0,
+      "reasoning": "显式节点，用户明确说明需要搜索数据操作"
+    },
+    {
+      "node_name": "成功判断",
+      "source_text": "如果搜索成功",
+      "inference_type": "explicit",
+      "confidence": 0.95,
+      "reasoning": "显式条件判断节点，检查搜索操作是否成功"
+    },
+    {
+      "node_name": "结果分析",
+      "source_text": "就分析结果",
+      "inference_type": "explicit",
+      "confidence": 0.95,
+      "reasoning": "显式节点，搜索成功后执行分析操作"
+    },
+    {
+      "node_name": "重试控制",
+      "source_text": "如果失败就重试最多3次",
+      "inference_type": "explicit",
+      "confidence": 0.95,
+      "reasoning": "显式节点，控制重试逻辑和次数限制"
+    },
+    {
+      "node_name": "报告生成",
+      "source_text": "分析完成后生成报告",
+      "inference_type": "explicit",
+      "confidence": 1.0,
+      "reasoning": "显式节点，分析完成后的输出步骤"
+    },
+    {
+      "node_name": "输入准备",
+      "source_text": "隐含入口节点",
+      "inference_type": "implicit",
+      "confidence": 0.9,
+      "reasoning": "任何工作流都需要明确的入口点来接收搜索参数"
+    },
+    {
+      "node_name": "错误处理",
+      "source_text": "隐含错误处理",
+      "inference_type": "implicit",
+      "confidence": 0.85,
+      "reasoning": "重试3次仍失败时需要错误处理节点"
+    },
+    {
+      "node_name": "输出节点",
+      "source_text": "隐含出口节点",
+      "inference_type": "implicit",
+      "confidence": 0.9,
+      "reasoning": "工作流需要统一出口来格式化和返回最终结果"
+    }
+  ],
+
+  "identified_edges": [
+    {
+      "edge_type": "sequential",
+      "source_text": "先搜索数据",
+      "source_node": "input_node",
+      "target_node": "search_data",
+      "confidence": 0.95,
+      "reasoning": "输入准备后首先执行搜索操作"
+    },
+    {
+      "edge_type": "conditional",
+      "source_text": "如果搜索成功就分析结果，如果失败就重试",
+      "source_node": "search_data",
+      "target_node": "check_search_result",
+      "confidence": 0.95,
+      "reasoning": "搜索后需要条件判断来决定下一步操作"
+    },
+    {
+      "edge_type": "conditional",
+      "source_text": "搜索成功就分析结果",
+      "source_node": "check_search_result",
+      "target_node": "analyze_results",
+      "confidence": 0.95,
+      "reasoning": "成功分支：搜索成功时执行分析"
+    },
+    {
+      "edge_type": "loop",
+      "source_text": "如果失败就重试最多3次",
+      "source_node": "check_search_result",
+      "target_node": "retry_search",
+      "confidence": 0.9,
+      "reasoning": "失败分支：搜索失败时进入重试循环"
+    },
+    {
+      "edge_type": "sequential",
+      "source_text": "重试",
+      "source_node": "retry_search",
+      "target_node": "search_data",
+      "confidence": 0.95,
+      "reasoning": "重试操作重新执行搜索"
+    },
+    {
+      "edge_type": "sequential",
+      "source_text": "分析完成后生成报告",
+      "source_node": "analyze_results",
+      "target_node": "generate_report",
+      "confidence": 0.95,
+      "reasoning": "分析完成后顺序执行报告生成"
+    },
+    {
+      "edge_type": "sequential",
+      "source_text": "隐含输出流程",
+      "source_node": "generate_report",
+      "target_node": "output_node",
+      "confidence": 0.9,
+      "reasoning": "报告生成后通过输出节点返回结果"
+    },
+    {
+      "edge_type": "error",
+      "source_text": "重试3次后仍失败",
+      "source_node": "retry_search",
+      "target_node": "handle_error",
+      "confidence": 0.85,
+      "reasoning": "超过最大重试次数后触发错误处理"
+    },
+    {
+      "edge_type": "sequential",
+      "source_text": "错误处理后输出",
+      "source_node": "handle_error",
+      "target_node": "output_node",
+      "confidence": 0.85,
+      "reasoning": "错误处理后也需要通过输出节点返回"
+    }
+  ],
+
+  "identified_states": [
+    {
+      "field_name": "search_query",
+      "state_type": "input",
+      "source_text": "搜索数据",
+      "confidence": 0.95,
+      "reasoning": "搜索操作需要查询关键词或搜索参数"
+    },
+    {
+      "field_name": "search_result",
+      "state_type": "intermediate",
+      "source_text": "搜索数据、分析结果",
+      "confidence": 0.95,
+      "reasoning": "搜索结果需要在节点间传递"
+    },
+    {
+      "field_name": "is_success",
+      "state_type": "control",
+      "source_text": "如果搜索成功就分析结果，如果失败就重试",
+      "confidence": 0.95,
+      "reasoning": "需要标志位来判断搜索是否成功"
+    },
+    {
+      "field_name": "retry_count",
+      "state_type": "control",
+      "source_text": "重试最多3次",
+      "confidence": 0.95,
+      "reasoning": "需要计数器来追踪重试次数"
+    },
+    {
+      "field_name": "max_retries",
+      "state_type": "control",
+      "source_text": "最多3次",
+      "confidence": 0.95,
+      "reasoning": "需要配置最大重试次数限制"
+    },
+    {
+      "field_name": "analysis_result",
+      "state_type": "intermediate",
+      "source_text": "分析结果",
+      "confidence": 0.9,
+      "reasoning": "分析结果需要传递给报告生成节点"
+    },
+    {
+      "field_name": "final_report",
+      "state_type": "output",
+      "source_text": "生成报告",
+      "confidence": 0.95,
+      "reasoning": "最终输出的报告内容"
+    },
+    {
+      "field_name": "error_message",
+      "state_type": "intermediate",
+      "source_text": "隐含错误信息",
+      "confidence": 0.85,
+      "reasoning": "错误处理需要存储错误信息"
+    },
+    {
+      "field_name": "execution_status",
+      "state_type": "control",
+      "source_text": "隐含执行状态",
+      "confidence": 0.85,
+      "reasoning": "需要追踪整体执行状态（成功/失败/部分成功）"
+    }
+  ],
+
+  "inferences": [
+    {
+      "inference_type": "隐含节点",
+      "content": "需要输入准备节点来接收搜索参数",
+      "reasoning": "任何自动化工作流都需要明确的入口点来接收外部输入",
+      "confidence": 0.9
+    },
+    {
+      "inference_type": "隐含节点",
+      "content": "需要条件判断节点来检查搜索结果",
+      "reasoning": "用户描述的'如果成功就分析，如果失败就重试'需要条件判断逻辑",
+      "confidence": 0.95
+    },
+    {
+      "inference_type": "隐含节点",
+      "content": "需要错误处理节点来处理重试耗尽的情况",
+      "reasoning": "重试3次后仍失败需要错误处理机制，而不是无限循环",
+      "confidence": 0.85
+    },
+    {
+      "inference_type": "隐含节点",
+      "content": "需要输出节点来统一格式化返回结果",
+      "reasoning": "无论是成功报告还是错误信息，都需要统一的输出格式",
+      "confidence": 0.9
+    },
+    {
+      "inference_type": "状态推断",
+      "content": "需要 retry_count 和 max_retries 控制状态",
+      "reasoning": "重试逻辑需要计数器来追踪当前次数和限制最大次数",
+      "confidence": 0.95
+    },
+    {
+      "inference_type": "条件补全",
+      "content": "搜索成功的判断条件是 result != null 且 result.data 非空",
+      "reasoning": "搜索工具通常返回结果对象，成功条件为数据非空",
+      "confidence": 0.85
+    },
+    {
+      "inference_type": "条件补全",
+      "content": "重试条件是 retry_count < max_retries",
+      "reasoning": "重试需要在未达到最大次数时执行",
+      "confidence": 0.95
+    }
+  ],
+
+  "ambiguities": [
+    {
+      "type": "动作对象不明",
+      "source_text": "搜索数据",
+      "question": "搜索什么类型的数据？使用什么搜索引擎或数据源？",
+      "suggested_options": [
+        "网页搜索（使用搜索引擎API）",
+        "数据库查询",
+        "文档检索",
+        "API接口调用"
+      ]
+    },
+    {
+      "type": "动作对象不明",
+      "source_text": "分析结果",
+      "question": "分析结果的目的是什么？需要提取什么信息？",
+      "suggested_options": [
+        "数据摘要和关键信息提取",
+        "趋势分析和统计",
+        "相关性分析",
+        "质量评估"
+      ]
+    },
+    {
+      "type": "动作对象不明",
+      "source_text": "生成报告",
+      "question": "报告的格式和内容要求是什么？",
+      "suggested_options": [
+        "Markdown格式的分析报告",
+        "JSON格式的结构化数据",
+        "PDF文档",
+        "HTML网页报告"
+      ]
+    },
+    {
+      "type": "条件不完整",
+      "source_text": "如果失败就重试",
+      "question": "重试是否需要退避策略（如延迟、指数退避）？",
+      "suggested_options": [
+        "立即重试",
+        "固定延迟后重试（如1秒）",
+        "指数退避（1s, 2s, 4s）",
+        "随机延迟"
+      ]
+    }
+  ],
+
+  "assumptions": [
+    {
+      "assumption": "使用通用的网页搜索工具（如搜索引擎API）",
+      "reason": "用户未指定具体数据源，使用最常见的搜索场景",
+      "impact": "如果实际需要数据库查询或API调用，需要修改 search_data 节点的配置"
+    },
+    {
+      "assumption": "分析结果是摘要和关键信息提取",
+      "reason": "用户未指定分析类型，采用最通用的分析方式",
+      "impact": "如果需要特定分析（如趋势分析），需要调整 analyze_results 节点的 prompt"
+    },
+    {
+      "assumption": "报告生成Markdown格式",
+      "reason": "Markdown是最通用和易读的格式",
+      "impact": "如果需要PDF或其他格式，需要修改 generate_report 节点"
+    },
+    {
+      "assumption": "重试采用固定延迟策略（1秒）",
+      "reason": "平衡重试速度和系统负载",
+      "impact": "如果需要指数退避或即时重试，需要调整 retry_search 配置"
+    },
+    {
+      "assumption": "搜索成功定义为返回结果且数据非空",
+      "reason": "标准搜索操作的成功判断",
+      "impact": "如果业务逻辑有不同的成功定义，需要调整条件表达式"
+    }
+  ]
+}

@@ -1,0 +1,515 @@
+{
+  "workflow_name": "complex_approval_workflow",
+  "description": "复杂的审批工作流，包含用户申请、系统验证、管理员审核、条件分支和邮件通知",
+  "version": "1.0.0",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "name": "开始",
+      "outputs": ["submit_application"]
+    },
+    {
+      "id": "submit_application",
+      "type": "action",
+      "name": "用户提交申请",
+      "action_type": "user_input",
+      "config": {
+        "form_fields": [
+          {
+            "name": "applicant_name",
+            "type": "text",
+            "required": true,
+            "label": "申请人姓名"
+          },
+          {
+            "name": "application_type",
+            "type": "select",
+            "required": true,
+            "label": "申请类型",
+            "options": ["休假申请", "费用报销", "项目审批", "资源申请"]
+          },
+          {
+            "name": "description",
+            "type": "textarea",
+            "required": true,
+            "label": "申请详情"
+          },
+          {
+            "name": "priority",
+            "type": "select",
+            "required": false,
+            "label": "优先级",
+            "options": ["普通", "紧急", "非常紧急"],
+            "default": "普通"
+          }
+        ],
+        "validation_rules": {
+          "applicant_name": {
+            "min_length": 2,
+            "max_length": 50
+          },
+          "description": {
+            "min_length": 10,
+            "max_length": 1000
+          }
+        }
+      },
+      "outputs": ["system_validation"],
+      "on_error": "return_validation_error"
+    },
+    {
+      "id": "system_validation",
+      "type": "action",
+      "name": "系统验证",
+      "action_type": "validation",
+      "config": {
+        "validation_checks": [
+          {
+            "check": "user_permissions",
+            "description": "检查用户是否有提交权限"
+          },
+          {
+            "check": "data_completeness",
+            "description": "检查必填字段是否完整"
+          },
+          {
+            "check": "business_rules",
+            "description": "检查业务规则合规性"
+          },
+          {
+            "check": "duplicate_check",
+            "description": "检查是否有重复申请"
+          },
+          {
+            "check": "quota_check",
+            "description": "检查配额限制"
+          }
+        ],
+        "strict_mode": true,
+        "log_validation_details": true
+      },
+      "outputs": ["check_validation_result"],
+      "on_error": "return_system_error"
+    },
+    {
+      "id": "check_validation_result",
+      "type": "conditional",
+      "name": "检查验证结果",
+      "condition": "validation_passed == true",
+      "condition_type": "expression",
+      "true_branch": "send_to_admin",
+      "false_branch": "return_validation_error",
+      "config": {
+        "error_details": "validation_errors"
+      }
+    },
+    {
+      "id": "return_validation_error",
+      "type": "action",
+      "name": "返回验证错误",
+      "action_type": "error_response",
+      "config": {
+        "error_type": "validation_error",
+        "include_error_details": true,
+        "suggested_corrections": true,
+        "allow_resubmit": true
+      },
+      "outputs": ["end"]
+    },
+    {
+      "id": "return_system_error",
+      "type": "action",
+      "name": "返回系统错误",
+      "action_type": "error_response",
+      "config": {
+        "error_type": "system_error",
+        "include_error_details": false,
+        "contact_support": true,
+        "error_code": "SYS_001"
+      },
+      "outputs": ["end"]
+    },
+    {
+      "id": "send_to_admin",
+      "type": "action",
+      "name": "发送给管理员审核",
+      "action_type": "notification",
+      "config": {
+        "notification_channels": ["email", "dashboard"],
+        "admin_roles": ["admin", "supervisor", "manager"],
+        "priority_routing": {
+          "紧急": "manager",
+          "非常紧急": "admin"
+        },
+        "include_application_details": true,
+        "add_action_buttons": true,
+        "assignment_timeout": 86400
+      },
+      "outputs": ["admin_review"],
+      "on_error": "handle_notification_error"
+    },
+    {
+      "id": "handle_notification_error",
+      "type": "action",
+      "name": "处理通知错误",
+      "action_type": "error_handler",
+      "config": {
+        "error_message": "无法发送通知给管理员",
+        "retry_notification": true,
+        "max_retries": 3,
+        "fallback_to_dashboard": true
+      },
+      "outputs": ["admin_review"]
+    },
+    {
+      "id": "admin_review",
+      "type": "human_action",
+      "name": "管理员审核",
+      "action_type": "manual_approval",
+      "config": {
+        "reviewer_roles": ["admin", "manager"],
+        "review_options": ["approve", "reject", "request_info"],
+        "require_comment": {
+          "reject": true,
+          "request_info": true,
+          "approve": false
+        },
+        "review_deadline": 72,
+        "escalation_timeout": 168,
+        "allow_delegation": true,
+        "review_history": true
+      },
+      "outputs": ["check_admin_decision"],
+      "on_error": "handle_review_error"
+    },
+    {
+      "id": "handle_review_error",
+      "type": "action",
+      "name": "处理审核错误",
+      "action_type": "error_handler",
+      "config": {
+        "error_message": "审核过程发生错误",
+        "escalate_to_supervisor": true,
+        "create_incident": true
+      },
+      "outputs": ["end"]
+    },
+    {
+      "id": "check_admin_decision",
+      "type": "conditional",
+      "name": "检查管理员决策",
+      "condition": "admin_decision",
+      "condition_type": "multi_branch",
+      "branches": {
+        "approve": "send_approval_notification",
+        "reject": "handle_rejection",
+        "request_info": "request_more_info"
+      },
+      "config": {
+        "store_decision_timestamp": true,
+        "store_reviewer_info": true
+      }
+    },
+    {
+      "id": "request_more_info",
+      "type": "action",
+      "name": "请求更多信息",
+      "action_type": "user_interaction",
+      "config": {
+        "notification_channels": ["email", "sms"],
+        "include_admin_questions": true,
+        "response_deadline": 48,
+        "auto_resubmit_on_response": true
+      },
+      "outputs": ["submit_application"]
+    },
+    {
+      "id": "handle_rejection",
+      "type": "action",
+      "name": "处理拒绝",
+      "action_type": "rejection_handler",
+      "config": {
+        "notify_applicant": true,
+        "include_rejection_reason": true,
+        "allow_appeal": false,
+        "update_application_status": "rejected",
+        "log_rejection": true
+      },
+      "outputs": ["end"]
+    },
+    {
+      "id": "send_approval_notification",
+      "type": "action",
+      "name": "发送批准通知邮件",
+      "action_type": "email_notification",
+      "config": {
+        "recipients": ["applicant", "admin"],
+        "template": "approval_notification",
+        "include_approval_details": true,
+        "attach_documents": false,
+        "priority": "normal",
+        "save_to_history": true
+      },
+      "outputs": ["update_final_status"],
+      "on_error": "handle_email_error"
+    },
+    {
+      "id": "handle_email_error",
+      "type": "action",
+      "name": "处理邮件错误",
+      "action_type": "error_handler",
+      "config": {
+        "error_message": "邮件发送失败",
+        "retry_send": true,
+        "max_retries": 3,
+        "fallback_notification": "dashboard",
+        "log_error": true
+      },
+      "outputs": ["update_final_status"]
+    },
+    {
+      "id": "update_final_status",
+      "type": "action",
+      "name": "更新最终状态",
+      "action_type": "status_update",
+      "config": {
+        "final_status": "approved",
+        "update_timestamp": true,
+        "generate_approval_certificate": true,
+        "archive_application": true,
+        "update_statistics": true
+      },
+      "outputs": ["end"]
+    },
+    {
+      "id": "end",
+      "type": "end",
+      "name": "结束"
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "submit_application"
+    },
+    {
+      "from": "submit_application",
+      "to": "system_validation"
+    },
+    {
+      "from": "submit_application",
+      "to": "return_validation_error",
+      "condition": "validation_error"
+    },
+    {
+      "from": "system_validation",
+      "to": "check_validation_result"
+    },
+    {
+      "from": "system_validation",
+      "to": "return_system_error",
+      "condition": "system_error"
+    },
+    {
+      "from": "check_validation_result",
+      "to": "send_to_admin",
+      "condition": "validation_passed"
+    },
+    {
+      "from": "check_validation_result",
+      "to": "return_validation_error",
+      "condition": "validation_failed"
+    },
+    {
+      "from": "return_validation_error",
+      "to": "end"
+    },
+    {
+      "from": "return_system_error",
+      "to": "end"
+    },
+    {
+      "from": "send_to_admin",
+      "to": "admin_review"
+    },
+    {
+      "from": "send_to_admin",
+      "to": "handle_notification_error",
+      "condition": "notification_error"
+    },
+    {
+      "from": "handle_notification_error",
+      "to": "admin_review"
+    },
+    {
+      "from": "admin_review",
+      "to": "check_admin_decision"
+    },
+    {
+      "from": "admin_review",
+      "to": "handle_review_error",
+      "condition": "review_error"
+    },
+    {
+      "from": "handle_review_error",
+      "to": "end"
+    },
+    {
+      "from": "check_admin_decision",
+      "to": "send_approval_notification",
+      "condition": "approve"
+    },
+    {
+      "from": "check_admin_decision",
+      "to": "handle_rejection",
+      "condition": "reject"
+    },
+    {
+      "from": "check_admin_decision",
+      "to": "request_more_info",
+      "condition": "request_info"
+    },
+    {
+      "from": "request_more_info",
+      "to": "submit_application"
+    },
+    {
+      "from": "handle_rejection",
+      "to": "end"
+    },
+    {
+      "from": "send_approval_notification",
+      "to": "update_final_status"
+    },
+    {
+      "from": "send_approval_notification",
+      "to": "handle_email_error",
+      "condition": "email_error"
+    },
+    {
+      "from": "handle_email_error",
+      "to": "update_final_status"
+    },
+    {
+      "from": "update_final_status",
+      "to": "end"
+    }
+  ],
+  "state_schema": {
+    "application": {
+      "type": "object",
+      "default": null,
+      "properties": {
+        "applicant_name": {"type": "string"},
+        "application_type": {"type": "string"},
+        "description": {"type": "string"},
+        "priority": {"type": "string"},
+        "submission_time": {"type": "timestamp"}
+      }
+    },
+    "validation_passed": {
+      "type": "boolean",
+      "default": false
+    },
+    "validation_errors": {
+      "type": "array",
+      "default": []
+    },
+    "admin_decision": {
+      "type": "string",
+      "enum": ["approve", "reject", "request_info"],
+      "default": null
+    },
+    "admin_comments": {
+      "type": "string",
+      "default": ""
+    },
+    "reviewer_info": {
+      "type": "object",
+      "default": null
+    },
+    "approval_timestamp": {
+      "type": "timestamp",
+      "default": null
+    },
+    "final_status": {
+      "type": "string",
+      "enum": ["approved", "rejected", "pending", "error"],
+      "default": "pending"
+    },
+    "email_sent": {
+      "type": "boolean",
+      "default": false
+    },
+    "error_log": {
+      "type": "array",
+      "default": []
+    },
+    "retry_count": {
+      "type": "integer",
+      "default": 0
+    }
+  },
+  "approval_config": {
+    "admin_roles": ["admin", "manager", "supervisor"],
+    "approval_deadline": 72,
+    "escalation_rules": {
+      "timeout_hours": 168,
+      "escalate_to": "senior_admin"
+    },
+    "delegation_allowed": true,
+    "concurrent_review": false,
+    "require_unanimous": false
+  },
+  "notification_config": {
+    "channels": ["email", "dashboard", "sms"],
+    "templates": {
+      "approval_notification": "approval_email_template",
+      "rejection_notification": "rejection_email_template",
+      "info_request": "info_request_template"
+    },
+    "retry_config": {
+      "max_retries": 3,
+      "retry_delay": 1000,
+      "backoff_multiplier": 2
+    },
+    "priority_routing": {
+      "紧急": "high_priority",
+      "非常紧急": "urgent_priority"
+    }
+  },
+  "validation_config": {
+    "strict_mode": true,
+    "validation_checks": [
+      "user_permissions",
+      "data_completeness",
+      "business_rules",
+      "duplicate_check",
+      "quota_check"
+    ],
+    "error_handling": "detailed",
+    "allow_correction": true
+  },
+  "email_config": {
+    "smtp_server": "smtp.example.com",
+    "smtp_port": 587,
+    "use_tls": true,
+    "from_address": "noreply@example.com",
+    "reply_to": "support@example.com",
+    "templates_path": "/templates/emails/",
+    "attachment_config": {
+      "max_size_mb": 10,
+      "allowed_types": ["pdf", "doc", "docx", "jpg", "png"]
+    }
+  },
+  "metadata": {
+    "created_at": "2025-04-21T12:00:00Z",
+    "created_by": "workflow_generator",
+    "version": "1.0.0",
+    "tags": ["approval", "workflow", "human_interaction", "email_notification", "conditional"],
+    "complexity": "high",
+    "estimated_completion_time": "72-168 hours",
+    "requires_human_intervention": true
+  }
+}

@@ -1,0 +1,250 @@
+{
+  "input_summary": "用户需要一个自动生成报告的工作流：输入主题→搜索资料→整理结果→AI生成大纲→用户确认（可重试最多3次）→生成完整报告",
+  "identified_nodes": [
+    {
+      "node_name": "输入准备",
+      "source_text": "用户输入一个主题",
+      "inference_type": "implicit",
+      "confidence": 1.0,
+      "reasoning": "任何工作流都需要明确的入口点来接收用户输入"
+    },
+    {
+      "node_name": "搜索资料",
+      "source_text": "系统去搜索相关的资料",
+      "inference_type": "explicit",
+      "confidence": 0.95,
+      "reasoning": "显式提到的搜索动作，涉及外部系统调用"
+    },
+    {
+      "node_name": "整理搜索结果",
+      "source_text": "把结果整理一下",
+      "inference_type": "explicit",
+      "confidence": 0.9,
+      "reasoning": "显式提到的整理动作，需要LLM处理搜索结果"
+    },
+    {
+      "node_name": "生成报告大纲",
+      "source_text": "让AI分析生成一个报告大纲",
+      "inference_type": "explicit",
+      "confidence": 0.95,
+      "reasoning": "显式提到的AI分析生成动作"
+    },
+    {
+      "node_name": "用户确认审核",
+      "source_text": "如果用户觉得不满意",
+      "inference_type": "implicit",
+      "confidence": 0.85,
+      "reasoning": "需要人工审核环节才能判断是否满意"
+    },
+    {
+      "node_name": "生成完整报告",
+      "source_text": "根据大纲写完整的报告内容",
+      "inference_type": "explicit",
+      "confidence": 0.95,
+      "reasoning": "显式提到的最终生成动作"
+    },
+    {
+      "node_name": "输出结果",
+      "source_text": "隐含的最终输出",
+      "inference_type": "implicit",
+      "confidence": 0.9,
+      "reasoning": "工作流需要明确的出口点返回最终结果"
+    }
+  ],
+  "identified_edges": [
+    {
+      "edge_type": "sequential",
+      "source_text": "首先呢，用户输入一个主题，然后系统去搜索相关的资料",
+      "source_node": "输入准备",
+      "target_node": "搜索资料",
+      "confidence": 0.95,
+      "reasoning": "顺序连接关系，明确使用'首先...然后...'"
+    },
+    {
+      "edge_type": "sequential",
+      "source_text": "搜完之后呢，把结果整理一下",
+      "source_node": "搜索资料",
+      "target_node": "整理搜索结果",
+      "confidence": 0.95,
+      "reasoning": "顺序连接关系，使用'搜完之后'"
+    },
+    {
+      "edge_type": "sequential",
+      "source_text": "然后让AI分析生成一个报告大纲",
+      "source_node": "整理搜索结果",
+      "target_node": "生成报告大纲",
+      "confidence": 0.9,
+      "reasoning": "顺序连接关系"
+    },
+    {
+      "edge_type": "conditional",
+      "source_text": "大纲生成之后，如果用户觉得不满意，可以让AI重新生成",
+      "source_node": "用户确认审核",
+      "target_node": "生成报告大纲",
+      "confidence": 0.9,
+      "reasoning": "条件分支关系，'如果不满意则重新生成'是典型的循环结构"
+    },
+    {
+      "edge_type": "sequential",
+      "source_text": "大纲确定后，再根据大纲写完整的报告内容",
+      "source_node": "用户确认审核",
+      "target_node": "生成完整报告",
+      "confidence": 0.95,
+      "reasoning": "顺序连接关系，'大纲确定后'表示条件满足后的执行路径"
+    },
+    {
+      "edge_type": "sequential",
+      "source_text": "隐含的输出流程",
+      "source_node": "生成完整报告",
+      "target_node": "输出结果",
+      "confidence": 0.9,
+      "reasoning": "工作流的最终输出步骤"
+    }
+  ],
+  "identified_states": [
+    {
+      "field_name": "topic",
+      "state_type": "input",
+      "source_text": "用户输入一个主题",
+      "confidence": 1.0,
+      "reasoning": "用户明确提到输入主题"
+    },
+    {
+      "field_name": "search_results",
+      "state_type": "intermediate",
+      "source_text": "搜索相关的资料",
+      "confidence": 0.95,
+      "reasoning": "搜索操作的输出需要传递给整理节点"
+    },
+    {
+      "field_name": "organized_results",
+      "state_type": "intermediate",
+      "source_text": "把结果整理一下",
+      "confidence": 0.9,
+      "reasoning": "整理后的结果需要传递给大纲生成节点"
+    },
+    {
+      "field_name": "outline",
+      "state_type": "intermediate",
+      "source_text": "生成一个报告大纲",
+      "confidence": 0.95,
+      "reasoning": "大纲需要在审核和最终报告生成中使用"
+    },
+    {
+      "field_name": "user_approval",
+      "state_type": "control",
+      "source_text": "如果用户觉得不满意",
+      "confidence": 0.85,
+      "reasoning": "需要状态标记用户是否批准大纲"
+    },
+    {
+      "field_name": "retry_count",
+      "state_type": "control",
+      "source_text": "最多重试3次",
+      "confidence": 0.95,
+      "reasoning": "需要计数器控制重试次数"
+    },
+    {
+      "field_name": "final_report",
+      "state_type": "output",
+      "source_text": "写完整的报告内容",
+      "confidence": 0.95,
+      "reasoning": "最终生成的报告内容"
+    }
+  ],
+  "inferences": [
+    {
+      "inference_type": "隐含节点",
+      "content": "添加输入准备节点接收和验证用户输入的主题",
+      "reasoning": "任何工作流都需要明确的入口点来标准化输入",
+      "confidence": 0.9
+    },
+    {
+      "inference_type": "隐含节点",
+      "content": "添加用户确认审核节点作为人工介入点",
+      "reasoning": "用户提到'如果用户觉得不满意'，说明需要人工审核环节",
+      "confidence": 0.85
+    },
+    {
+      "inference_type": "隐含节点",
+      "content": "添加输出节点返回最终报告",
+      "reasoning": "工作流需要明确的出口点",
+      "confidence": 0.9
+    },
+    {
+      "inference_type": "条件补全",
+      "content": "用户不满意时的循环返回到生成报告大纲节点",
+      "reasoning": "用户提到'可以让AI重新生成'，表示循环回到大纲生成",
+      "confidence": 0.9
+    },
+    {
+      "inference_type": "状态推断",
+      "content": "添加retry_count状态控制重试次数上限",
+      "reasoning": "用户明确提到'最多重试3次'，需要计数器",
+      "confidence": 0.95
+    },
+    {
+      "inference_type": "状态推断",
+      "content": "添加user_approval状态标记用户是否批准",
+      "reasoning": "条件分支需要明确的状态标志",
+      "confidence": 0.85
+    }
+  ],
+  "ambiguities": [
+    {
+      "type": "动作对象不明",
+      "source_text": "搜索相关的资料",
+      "question": "使用什么搜索引擎或数据源？",
+      "suggested_options": [
+        "通用网络搜索（Google/Bing）",
+        "学术数据库搜索",
+        "内部知识库搜索",
+        "多种数据源并行搜索"
+      ]
+    },
+    {
+      "type": "动作对象不明",
+      "source_text": "把结果整理一下",
+      "question": "整理的标准和格式是什么？",
+      "suggested_options": [
+        "按相关性排序并去重",
+        "提取关键信息并分类",
+        "生成摘要",
+        "结构化数据格式"
+      ]
+    },
+    {
+      "type": "条件不完整",
+      "source_text": "如果用户觉得不满意",
+      "question": "用户如何表达不满意？如何重试？",
+      "suggested_options": [
+        "用户直接拒绝并提供修改意见",
+        "用户给出评分（1-5分），低于阈值重试",
+        "用户选择'重新生成'按钮",
+        "用户手动编辑大纲"
+      ]
+    }
+  ],
+  "assumptions": [
+    {
+      "assumption": "使用通用网络搜索作为默认搜索引擎",
+      "reason": "用户未指定具体数据源，通用搜索是最常见选择",
+      "impact": "如果实际需要专用数据源，需要修改搜索节点配置"
+    },
+    {
+      "assumption": "整理结果包括去重、排序和摘要生成",
+      "reason": "这是搜索结果整理的常见操作",
+      "impact": "可能影响大纲生成的质量"
+    },
+    {
+      "assumption": "用户确认采用二元选择（批准/拒绝）",
+      "reason": "最简单的交互方式",
+      "impact": "如果需要更细粒度的反馈，需要扩展确认节点"
+    },
+    {
+      "assumption": "重试3次后自动接受当前大纲或终止流程",
+      "reason": "需要明确重试上限后的行为",
+      "impact": "可能影响用户体验和报告质量"
+    }
+  ]
+}

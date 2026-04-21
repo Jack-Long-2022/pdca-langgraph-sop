@@ -1,0 +1,1 @@
+{"eval_id": 2, "eval_name": "conditional_retry_workflow", "prompt": "我需要自动化这个流程：先搜索数据，如果搜索成功就分析结果，如果失败就重试最多3次。分析完成后生成报告。", "assertions": []}

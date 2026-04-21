@@ -1,0 +1,208 @@
+{
+  "visualization": {
+    "format": "mermaid",
+    "diagram_type": "flowchart",
+    "graph_definition": "TD",
+    "nodes": [
+      {
+        "id": "A",
+        "label": "开始",
+        "shape": "rounded",
+        "style": "fill:#e1f5e1"
+      },
+      {
+        "id": "B",
+        "label": "用户提交申请",
+        "shape": "rectangle",
+        "style": "fill:#e3f2fd"
+      },
+      {
+        "id": "C",
+        "label": "系统验证",
+        "shape": "rectangle",
+        "style": "fill:#fff3e0"
+      },
+      {
+        "id": "D",
+        "label": "验证通过?",
+        "shape": "diamond",
+        "style": "fill:#fff9c4"
+      },
+      {
+        "id": "E",
+        "label": "返回错误",
+        "shape": "rectangle",
+        "style": "fill:#ffebee"
+      },
+      {
+        "id": "F",
+        "label": "发送给管理员",
+        "shape": "rectangle",
+        "style": "fill:#e3f2fd"
+      },
+      {
+        "id": "G",
+        "label": "管理员审核",
+        "shape": "stadium",
+        "style": "fill:#f3e5f5"
+      },
+      {
+        "id": "H",
+        "label": "管理员决策",
+        "shape": "diamond",
+        "style": "fill:#fff9c4"
+      },
+      {
+        "id": "I",
+        "label": "发送批准邮件",
+        "shape": "rectangle",
+        "style": "fill:#e8f5e9"
+      },
+      {
+        "id": "J",
+        "label": "处理拒绝",
+        "shape": "rectangle",
+        "style": "fill:#ffebee"
+      },
+      {
+        "id": "K",
+        "label": "请求更多信息",
+        "shape": "rectangle",
+        "style": "fill:#fff3e0"
+      },
+      {
+        "id": "L",
+        "label": "更新状态",
+        "shape": "rectangle",
+        "style": "fill:#e1f5e1"
+      },
+      {
+        "id": "M",
+        "label": "结束",
+        "shape": "rounded",
+        "style": "fill:#e1f5e1"
+      }
+    ],
+    "edges": [
+      {
+        "from": "A",
+        "to": "B",
+        "label": ""
+      },
+      {
+        "from": "B",
+        "to": "C",
+        "label": ""
+      },
+      {
+        "from": "C",
+        "to": "D",
+        "label": ""
+      },
+      {
+        "from": "D",
+        "to": "E",
+        "label": "否"
+      },
+      {
+        "from": "D",
+        "to": "F",
+        "label": "是"
+      },
+      {
+        "from": "E",
+        "to": "M",
+        "label": ""
+      },
+      {
+        "from": "F",
+        "to": "G",
+        "label": ""
+      },
+      {
+        "from": "G",
+        "to": "H",
+        "label": ""
+      },
+      {
+        "from": "H",
+        "to": "I",
+        "label": "批准"
+      },
+      {
+        "from": "H",
+        "to": "J",
+        "label": "拒绝"
+      },
+      {
+        "from": "H",
+        "to": "K",
+        "label": "需要信息"
+      },
+      {
+        "from": "I",
+        "to": "L",
+        "label": ""
+      },
+      {
+        "from": "J",
+        "to": "M",
+        "label": ""
+      },
+      {
+        "from": "K",
+        "to": "B",
+        "label": "重新提交"
+      },
+      {
+        "from": "L",
+        "to": "M",
+        "label": ""
+      }
+    ],
+    "subgraphs": [
+      {
+        "id": "validation_phase",
+        "label": "验证阶段",
+        "nodes": ["C", "D", "E"],
+        "style": "fill:#fff8e1,stroke:#ff8f00,stroke-width:2px"
+      },
+      {
+        "id": "approval_phase",
+        "label": "审核阶段",
+        "nodes": ["F", "G", "H"],
+        "style": "fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px"
+      },
+      {
+        "id": "notification_phase",
+        "label": "通知阶段",
+        "nodes": ["I", "J", "K"],
+        "style": "fill:#e8f5e9,stroke:#388e3c,stroke-width:2px"
+      }
+    ],
+    "styling": {
+      "theme": "default",
+      "background_color": "#ffffff",
+      "font_family": "Arial, sans-serif",
+      "node_spacing": "50px",
+      "rank_spacing": "75px"
+    }
+  },
+  "mermaid_code": "graph TD\n    A([开始]) --> B[用户提交申请]\n    B --> C[系统验证]\n    C --> D{验证通过?}\n    D -->|否| E[返回错误]\n    D -->|是| F[发送给管理员]\n    E --> M([结束])\n    F --> G[管理员审核]\n    G --> H{管理员决策}\n    H -->|批准| I[发送批准邮件]\n    H -->|拒绝| J[处理拒绝]\n    H -->|需要信息| K[请求更多信息]\n    I --> L[更新状态]\n    J --> M\n    K --> B\n    L --> M\n\n    style A fill:#e1f5e1\n    style B fill:#e3f2fd\n    style C fill:#fff3e0\n    style D fill:#fff9c4\n    style E fill:#ffebee\n    style F fill:#e3f2fd\n    style G fill:#f3e5f5\n    style H fill:#fff9c4\n    style I fill:#e8f5e9\n    style J fill:#ffebee\n    style K fill:#fff3e0\n    style L fill:#e1f5e1\n    style M fill:#e1f5e1\n\n    subgraph 验证阶段\n    C\n    D\n    E\n    end\n\n    subgraph 审核阶段\n    F\n    G\n    H\n    end\n\n    subgraph 通知阶段\n    I\n    J\n    K\n    end"
+  },
+  "statistics": {
+    "total_nodes": 13,
+    "decision_nodes": 2,
+    "action_nodes": 8,
+    "human_interaction_nodes": 1,
+    "max_path_length": 8,
+    "min_path_length": 3,
+    "average_path_length": 5.5,
+    "complexity_metrics": {
+      "cyclomatic_complexity": 4,
+      "decision_points": 2,
+      "integration_points": 3,
+      "error_handling_paths": 3
+    }
+  }
+}

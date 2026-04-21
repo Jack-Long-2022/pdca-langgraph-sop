@@ -1,0 +1,698 @@
+{
+  "analysis": {
+    "input_summary": "用户需要一个自动化报告生成工作流，包含：用户输入主题 → 搜索资料 → 整理结果 → AI生成大纲 → 用户确认（可重试最多3次） → 生成完整报告",
+    "input_preprocessing": {
+      "original": "那个，我想做一个自动写报告的流程。首先呢，用户输入一个主题，然后系统去搜索相关的资料，搜完之后呢，把结果整理一下，然后让AI分析生成一个报告大纲。大纲生成之后，如果用户觉得不满意，可以让AI重新生成，最多重试3次。大纲确定后，再根据大纲写完整的报告内容。",
+      "cleaned": "创建自动写报告流程。步骤：1.用户输入主题 2.搜索相关资料 3.整理搜索结果 4.AI分析生成报告大纲 5.用户确认大纲(不满意可重试最多3次) 6.根据大纲生成完整报告内容",
+      "removed_fillers": ["那个", "首先呢", "然后", "搜完之后呢", "一下"],
+      "identified_segments": [
+        "用户输入一个主题",
+        "系统去搜索相关的资料",
+        "把结果整理一下",
+        "让AI分析生成一个报告大纲",
+        "大纲生成之后，如果用户觉得不满意，可以让AI重新生成，最多重试3次",
+        "大纲确定后，再根据大纲写完整的报告内容"
+      ]
+    },
+    "identified_nodes": [
+      {
+        "node_name": "接收主题输入",
+        "source_text": "用户输入一个主题",
+        "inference_type": "explicit",
+        "confidence": 0.98,
+        "reasoning": "明确提到用户输入动作，需要输入节点接收主题",
+        "node_type": "control_node",
+        "node_subtype": "input_node"
+      },
+      {
+        "node_name": "搜索相关资料",
+        "source_text": "系统去搜索相关的资料",
+        "inference_type": "explicit",
+        "confidence": 0.99,
+        "reasoning": "明确提到搜索动作，需要外部搜索工具",
+        "node_type": "tool_node",
+        "node_subtype": "search"
+      },
+      {
+        "node_name": "整理搜索结果",
+        "source_text": "把结果整理一下",
+        "inference_type": "explicit",
+        "confidence": 0.95,
+        "reasoning": "明确提到整理动作，需要AI处理和分析",
+        "node_type": "thinking_node",
+        "node_subtype": "extraction"
+      },
+      {
+        "node_name": "生成报告大纲",
+        "source_text": "让AI分析生成一个报告大纲",
+        "inference_type": "explicit",
+        "confidence": 0.99,
+        "reasoning": "明确提到AI生成大纲，需要内容生成节点",
+        "node_type": "thinking_node",
+        "node_subtype": "generation"
+      },
+      {
+        "node_name": "用户审核大纲",
+        "source_text": "如果用户觉得不满意",
+        "inference_type": "explicit",
+        "confidence": 0.97,
+        "reasoning": "提到用户判断满意度，需要人工审核节点",
+        "node_type": "control_node",
+        "node_subtype": "human_approval"
+      },
+      {
+        "node_name": "重试计数器",
+        "source_text": "最多重试3次",
+        "inference_type": "implicit",
+        "confidence": 0.92,
+        "reasoning": "提到重试次数限制，需要循环控制节点",
+        "node_type": "control_node",
+        "node_subtype": "loop_node"
+      },
+      {
+        "node_name": "生成完整报告",
+        "source_text": "根据大纲写完整的报告内容",
+        "inference_type": "explicit",
+        "confidence": 0.99,
+        "reasoning": "明确提到根据大纲生成完整内容，需要生成节点",
+        "node_type": "thinking_node",
+        "node_subtype": "generation"
+      },
+      {
+        "node_name": "输出报告",
+        "source_text": "写完整的报告内容",
+        "inference_type": "implicit",
+        "confidence": 0.90,
+        "reasoning": "工作流最终需要输出结果，需要输出节点",
+        "node_type": "control_node",
+        "node_subtype": "output_node"
+      }
+    ],
+    "identified_edges": [
+      {
+        "edge_type": "sequential",
+        "source_text": "首先呢，用户输入一个主题，然后系统去搜索",
+        "source_node": "node_control_001",
+        "target_node": "node_tool_001",
+        "confidence": 0.98,
+        "reasoning": "使用'然后'连接，表示顺序执行"
+      },
+      {
+        "edge_type": "sequential",
+        "source_text": "搜完之后呢，把结果整理一下",
+        "source_node": "node_tool_001",
+        "target_node": "node_thinking_001",
+        "confidence": 0.96,
+        "reasoning": "使用'搜完之后'连接，表示顺序执行"
+      },
+      {
+        "edge_type": "sequential",
+        "source_text": "然后让AI分析生成一个报告大纲",
+        "source_node": "node_thinking_001",
+        "target_node": "node_thinking_002",
+        "confidence": 0.97,
+        "reasoning": "整理完成后生成大纲，顺序关系"
+      },
+      {
+        "edge_type": "conditional",
+        "source_text": "大纲生成之后，如果用户觉得不满意",
+        "source_node": "node_thinking_002",
+        "target_node": "node_control_002",
+        "confidence": 0.95,
+        "reasoning": "使用'如果'表达条件判断",
+        "condition": "{user_approval} == false"
+      },
+      {
+        "edge_type": "loop",
+        "source_text": "可以让AI重新生成，最多重试3次",
+        "source_node": "node_control_002",
+        "target_node": "node_thinking_002",
+        "confidence": 0.93,
+        "reasoning": "提到'重新生成'和'最多重试3次'，表示循环结构",
+        "exit_condition": "{retry_count} >= 3 or {user_approval} == true",
+        "max_iterations": 3
+      },
+      {
+        "edge_type": "sequential",
+        "source_text": "大纲确定后，再根据大纲写完整的报告内容",
+        "source_node": "node_control_002",
+        "target_node": "node_thinking_003",
+        "confidence": 0.96,
+        "reasoning": "使用'大纲确定后'，表示确认后的顺序执行",
+        "condition": "{user_approval} == true"
+      },
+      {
+        "edge_type": "sequential",
+        "source_text": "写完整的报告内容",
+        "source_node": "node_thinking_003",
+        "target_node": "node_control_003",
+        "confidence": 0.92,
+        "reasoning": "报告生成完成后输出结果"
+      }
+    ],
+    "identified_states": [
+      {
+        "field_name": "topic",
+        "state_type": "input",
+        "source_text": "用户输入一个主题",
+        "confidence": 0.99,
+        "reasoning": "用户明确输入主题，是工作流的起始状态"
+      },
+      {
+        "field_name": "search_results",
+        "state_type": "intermediate",
+        "source_text": "搜索相关的资料",
+        "confidence": 0.97,
+        "reasoning": "搜索节点的输出，传递给整理节点"
+      },
+      {
+        "field_name": "organized_data",
+        "state_type": "intermediate",
+        "source_text": "把结果整理一下",
+        "confidence": 0.95,
+        "reasoning": "整理节点的输出，传递给大纲生成节点"
+      },
+      {
+        "field_name": "outline",
+        "state_type": "intermediate",
+        "source_text": "生成一个报告大纲",
+        "confidence": 0.98,
+        "reasoning": "大纲生成节点的输出，需要用户确认"
+      },
+      {
+        "field_name": "user_approval",
+        "state_type": "control",
+        "source_text": "如果用户觉得不满意",
+        "confidence": 0.96,
+        "reasoning": "用户确认状态，控制是否重试或继续"
+      },
+      {
+        "field_name": "retry_count",
+        "state_type": "control",
+        "source_text": "最多重试3次",
+        "confidence": 0.94,
+        "reasoning": "重试计数，控制循环终止"
+      },
+      {
+        "field_name": "final_report",
+        "state_type": "output",
+        "source_text": "写完整的报告内容",
+        "confidence": 0.97,
+        "reasoning": "最终输出状态，工作流目标产物"
+      }
+    ],
+    "inferences": [
+      {
+        "inference_type": "隐含节点",
+        "content": "添加循环控制节点(node_control_004)管理重试逻辑",
+        "reasoning": "需要专门的节点来管理重试计数和终止条件",
+        "confidence": 0.90
+      },
+      {
+        "inference_type": "隐含节点",
+        "content": "添加输出节点(node_control_003)完成工作流",
+        "reasoning": "工作流需要明确的出口来返回最终结果",
+        "confidence": 0.88
+      },
+      {
+        "inference_type": "条件补全",
+        "content": "用户满意时直接进入报告生成，不满意时进入重试循环",
+        "reasoning": "根据'如果用户觉得不满意'推断存在满意时的分支",
+        "confidence": 0.92
+      },
+      {
+        "inference_type": "状态推断",
+        "content": "添加timestamp和workflow_id元数据状态",
+        "reasoning": "标准工作流需要跟踪执行时间和实例标识",
+        "confidence": 0.85
+      }
+    ],
+    "ambiguities": [
+      {
+        "type": "动作对象不明",
+        "source_text": "搜索相关的资料",
+        "question": "使用什么搜索引擎或数据源进行搜索？",
+        "suggested_options": ["网络搜索(如Google/Bing)", "内部知识库搜索", "学术数据库搜索", "综合搜索(多种源)"]
+      },
+      {
+        "type": "动作对象不明",
+        "source_text": "把结果整理一下",
+        "question": "整理结果的具体标准是什么？",
+        "suggested_options": ["去重和分类", "提取关键信息", "生成摘要", "按相关性排序"]
+      },
+      {
+        "type": "条件不完整",
+        "source_text": "如果用户觉得不满意",
+        "question": "用户如何表达不满意？",
+        "suggested_options": ["明确拒绝/修改指令", "评分系统(如1-5分)", "要求重新生成", "提供修改建议"]
+      },
+      {
+        "type": "动作对象不明",
+        "source_text": "写完整的报告内容",
+        "question": "报告的格式和长度要求是什么？",
+        "suggested_options": ["Markdown格式", "PDF文档", "纯文本", "HTML页面"]
+      }
+    ],
+    "assumptions": [
+      {
+        "assumption": "使用综合网络搜索作为资料来源",
+        "reason": "用户未明确指定搜索源，网络搜索是最通用的选择",
+        "impact": "如需使用特定数据源，需要修改tool_node配置"
+      },
+      {
+        "assumption": "整理结果包括去重、分类和提取关键信息",
+        "reason": "这是'整理'的常见理解，适合大纲生成需求",
+        "impact": "如需其他整理方式，需要调整extraction节点逻辑"
+      },
+      {
+        "assumption": "用户审核采用明确批准/拒绝机制",
+        "reason": "最简单的交互方式，易于实现",
+        "impact": "如需更复杂的反馈机制，需要扩展human_approval节点"
+      },
+      {
+        "assumption": "报告输出为Markdown格式",
+        "reason": "Markdown通用性强，易于转换和编辑",
+        "impact": "如需其他格式，需要修改output_node配置"
+      },
+      {
+        "assumption": "每次重试都基于用户的反馈进行优化",
+        "reason": "重试的目的是改进结果，需要反馈机制",
+        "impact": "如无反馈机制，重试可能产生相同结果"
+      }
+    ]
+  },
+  "config": {
+    "workflow_id": "wf_auto_report_generation_001",
+    "workflow_name": "自动化报告生成工作流",
+    "description": "基于用户输入的主题，自动搜索资料、整理信息、生成大纲、用户确认(可重试最多3次)、最终生成完整报告的自动化流程",
+    "version": "1.0.0",
+    "metadata": {
+      "author": "AI Assistant",
+      "created_at": "2026-04-21T00:00:00Z",
+      "source_input": "那个，我想做一个自动写报告的流程。首先呢，用户输入一个主题，然后系统去搜索相关的资料，搜完之后呢，把结果整理一下，然后让AI分析生成一个报告大纲。大纲生成之后，如果用户觉得不满意，可以让AI重新生成，最多重试3次。大纲确定后，再根据大纲写完整的报告内容。",
+      "language": "zh-CN",
+      "domain": "content_generation"
+    },
+    "nodes": [
+      {
+        "node_id": "node_control_001",
+        "node_name": "接收主题输入",
+        "node_type": "control_node",
+        "node_subtype": "input_node",
+        "description": "接收并验证用户输入的报告主题，确保主题清晰可执行",
+        "input_schema": {
+          "fields": [
+            {"name": "raw_input", "type": "object", "required": true, "description": "原始用户输入"},
+            {"name": "topic", "type": "string", "required": true, "description": "报告主题"}
+          ]
+        },
+        "output_schema": {
+          "fields": [
+            {"name": "validated_topic", "type": "string", "required": true, "description": "验证后的主题"},
+            {"name": "workflow_id", "type": "string", "required": true, "description": "工作流实例ID"},
+            {"name": "timestamp", "type": "string", "required": true, "description": "开始时间"}
+          ]
+        },
+        "config": {
+          "validation_rules": ["min_length: 5", "max_length: 200", "no_special_chars"]
+        },
+        "metadata": {
+          "inference_type": "explicit",
+          "source_text": "用户输入一个主题"
+        }
+      },
+      {
+        "node_id": "node_tool_001",
+        "node_name": "搜索相关资料",
+        "node_type": "tool_node",
+        "node_subtype": "search",
+        "description": "根据主题搜索相关的资料和参考信息",
+        "input_schema": {
+          "fields": [
+            {"name": "validated_topic", "type": "string", "required": true, "description": "搜索主题"},
+            {"name": "search_depth", "type": "integer", "required": false, "description": "搜索深度/结果数量"}
+          ]
+        },
+        "output_schema": {
+          "fields": [
+            {"name": "search_results", "type": "array", "required": true, "description": "搜索结果列表"},
+            {"name": "result_count", "type": "integer", "required": true, "description": "结果数量"},
+            {"name": "search_metadata", "type": "object", "required": false, "description": "搜索元数据"}
+          ]
+        },
+        "config": {
+          "tool_type": "web_search",
+          "max_results": 10,
+          "timeout": 30000,
+          "retry_on_failure": true
+        },
+        "metadata": {
+          "inference_type": "explicit",
+          "source_text": "系统去搜索相关的资料"
+        }
+      },
+      {
+        "node_id": "node_thinking_001",
+        "node_name": "整理搜索结果",
+        "node_type": "thinking_node",
+        "node_subtype": "extraction",
+        "description": "对搜索结果进行去重、分类和关键信息提取",
+        "input_schema": {
+          "fields": [
+            {"name": "search_results", "type": "array", "required": true, "description": "原始搜索结果"},
+            {"name": "validated_topic", "type": "string", "required": true, "description": "原始主题"}
+          ]
+        },
+        "output_schema": {
+          "fields": [
+            {"name": "organized_data", "type": "object", "required": true, "description": "整理后的结构化数据"},
+            {"name": "key_points", "type": "array", "required": true, "description": "关键要点列表"},
+            {"name": "categories", "type": "array", "required": true, "description": "分类标签"}
+          ]
+        },
+        "config": {
+          "prompt_template": "你是一个信息整理专家。请对以下搜索结果进行整理：\n1. 去除重复内容\n2. 按主题分类\n3. 提取关键信息\n4. 按重要性排序\n\n主题：{validated_topic}\n搜索结果：{search_results}\n\n请返回结构化的整理结果。",
+          "model": "claude-3-5-sonnet",
+          "temperature": 0.3
+        },
+        "metadata": {
+          "inference_type": "explicit",
+          "source_text": "把结果整理一下"
+        }
+      },
+      {
+        "node_id": "node_thinking_002",
+        "node_name": "生成报告大纲",
+        "node_type": "thinking_node",
+        "node_subtype": "generation",
+        "description": "基于整理后的资料生成结构化的报告大纲",
+        "input_schema": {
+          "fields": [
+            {"name": "organized_data", "type": "object", "required": true, "description": "整理后的数据"},
+            {"name": "validated_topic", "type": "string", "required": true, "description": "报告主题"},
+            {"name": "retry_count", "type": "integer", "required": false, "description": "当前重试次数"},
+            {"name": "user_feedback", "type": "string", "required": false, "description": "用户反馈(如有)"}
+          ]
+        },
+        "output_schema": {
+          "fields": [
+            {"name": "outline", "type": "object", "required": true, "description": "报告大纲"},
+            {"name": "outline_structure", "type": "array", "required": true, "description": "大纲结构(章节列表)"},
+            {"name": "estimated_length", "type": "integer", "required": true, "description": "预估字数"}
+          ]
+        },
+        "config": {
+          "prompt_template": "你是一个专业的大纲设计师。基于以下资料生成报告大纲：\n\n主题：{validated_topic}\n整理后的资料：{organized_data}\n{user_feedback ? '用户反馈：' + user_feedback : ''}\n{retry_count > 0 ? '(第' + (retry_count + 1) + '次生成)' : ''}\n\n请生成结构清晰、逻辑连贯的报告大纲，包括：\n1. 主要章节\n2. 每章的核心内容\n3. 预估字数",
+          "model": "claude-3-5-sonnet",
+          "temperature": 0.5
+        },
+        "metadata": {
+          "inference_type": "explicit",
+          "source_text": "让AI分析生成一个报告大纲"
+        }
+      },
+      {
+        "node_id": "node_control_002",
+        "node_name": "用户审核大纲",
+        "node_type": "control_node",
+        "node_subtype": "human_approval",
+        "description": "等待用户审核大纲，收集批准或拒绝反馈",
+        "input_schema": {
+          "fields": [
+            {"name": "outline", "type": "object", "required": true, "description": "待审核的大纲"},
+            {"name": "retry_count", "type": "integer", "required": true, "description": "当前重试次数"}
+          ]
+        },
+        "output_schema": {
+          "fields": [
+            {"name": "user_approval", "type": "boolean", "required": true, "description": "用户是否批准"},
+            {"name": "user_feedback", "type": "string", "required": false, "description": "用户反馈意见"},
+            {"name": "retry_count", "type": "integer", "required": true, "description": "更新后的重试次数"}
+          ]
+        },
+        "config": {
+          "approval_method": "explicit",
+          "timeout": 600000,
+          "max_wait_time": 600000,
+          "allow_feedback": true
+        },
+        "metadata": {
+          "inference_type": "explicit",
+          "source_text": "如果用户觉得不满意"
+        }
+      },
+      {
+        "node_id": "node_control_004",
+        "node_name": "重试控制",
+        "node_type": "control_node",
+        "node_subtype": "loop_node",
+        "description": "控制大纲重试逻辑，最多重试3次",
+        "input_schema": {
+          "fields": [
+            {"name": "user_approval", "type": "boolean", "required": true, "description": "用户批准状态"},
+            {"name": "retry_count", "type": "integer", "required": true, "description": "当前重试次数"}
+          ]
+        },
+        "output_schema": {
+          "fields": [
+            {"name": "should_retry", "type": "boolean", "required": true, "description": "是否应该重试"},
+            {"name": "retry_count", "type": "integer", "required": true, "description": "更新后的重试计数"},
+            {"name": "exceeded_max_retries", "type": "boolean", "required": true, "description": "是否超过最大重试次数"}
+          ]
+        },
+        "config": {
+          "max_retries": 3,
+          "exit_condition": "{user_approval} == true or {retry_count} >= 3",
+          "increment_on_retry": true
+        },
+        "metadata": {
+          "inference_type": "implicit",
+          "source_text": "最多重试3次"
+        }
+      },
+      {
+        "node_id": "node_thinking_003",
+        "node_name": "生成完整报告",
+        "node_type": "thinking_node",
+        "node_subtype": "generation",
+        "description": "根据确认的大纲生成完整的报告内容",
+        "input_schema": {
+          "fields": [
+            {"name": "outline", "type": "object", "required": true, "description": "确认的大纲"},
+            {"name": "organized_data", "type": "object", "required": true, "description": "整理后的资料"},
+            {"name": "validated_topic", "type": "string", "required": true, "description": "报告主题"}
+          ]
+        },
+        "output_schema": {
+          "fields": [
+            {"name": "final_report", "type": "string", "required": true, "description": "完整报告内容(Markdown)"},
+            {"name": "report_metadata", "type": "object", "required": true, "description": "报告元数据(字数、章节数等)"},
+            {"name": "generation_timestamp", "type": "string", "required": true, "description": "生成时间"}
+          ]
+        },
+        "config": {
+          "prompt_template": "你是一个专业的内容创作者。根据以下大纲和资料生成完整报告：\n\n主题：{validated_topic}\n大纲：{outline}\n参考资料：{organized_data}\n\n请生成内容详实、逻辑清晰、语言流畅的完整报告。\n格式要求：\n- 使用Markdown格式\n- 包含标题层级\n- 适当使用列表和表格\n- 添加必要的引用和说明",
+          "model": "claude-3-5-sonnet",
+          "temperature": 0.7,
+          "max_tokens": 8000
+        },
+        "metadata": {
+          "inference_type": "explicit",
+          "source_text": "根据大纲写完整的报告内容"
+        }
+      },
+      {
+        "node_id": "node_control_003",
+        "node_name": "输出报告",
+        "node_type": "control_node",
+        "node_subtype": "output_node",
+        "description": "格式化并输出最终报告",
+        "input_schema": {
+          "fields": [
+            {"name": "final_report", "type": "string", "required": true, "description": "报告内容"},
+            {"name": "report_metadata", "type": "object", "required": true, "description": "报告元数据"},
+            {"name": "workflow_id", "type": "string", "required": true, "description": "工作流ID"}
+          ]
+        },
+        "output_schema": {
+          "fields": [
+            {"name": "output_report", "type": "object", "required": true, "description": "输出报告对象"},
+            {"name": "status", "type": "string", "required": true, "description": "完成状态"},
+            {"name": "completion_timestamp", "type": "string", "required": true, "description": "完成时间"}
+          ]
+        },
+        "config": {
+          "output_format": "markdown",
+          "include_metadata": true,
+          "save_to_file": true
+        },
+        "metadata": {
+          "inference_type": "implicit",
+          "source_text": "写完整的报告内容"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "edge_id": "edge_001_sequential",
+        "source": "node_control_001",
+        "target": "node_tool_001",
+        "edge_type": "sequential",
+        "description": "主题输入验证后开始搜索"
+      },
+      {
+        "edge_id": "edge_002_sequential",
+        "source": "node_tool_001",
+        "target": "node_thinking_001",
+        "edge_type": "sequential",
+        "description": "搜索完成后整理结果"
+      },
+      {
+        "edge_id": "edge_003_sequential",
+        "source": "node_thinking_001",
+        "target": "node_thinking_002",
+        "edge_type": "sequential",
+        "description": "整理完成后生成大纲"
+      },
+      {
+        "edge_id": "edge_004_sequential",
+        "source": "node_thinking_002",
+        "target": "node_control_002",
+        "edge_type": "sequential",
+        "description": "大纲生成后等待用户审核"
+      },
+      {
+        "edge_id": "edge_005_conditional_approve",
+        "source": "node_control_002",
+        "target": "node_thinking_003",
+        "edge_type": "conditional",
+        "condition": "{user_approval} == true",
+        "description": "用户批准大纲后生成报告"
+      },
+      {
+        "edge_id": "edge_006_loop",
+        "source": "node_control_002",
+        "target": "node_control_004",
+        "edge_type": "sequential",
+        "condition": "{user_approval} == false",
+        "description": "用户拒绝后进入重试控制"
+      },
+      {
+        "edge_id": "edge_007_loop_retry",
+        "source": "node_control_004",
+        "target": "node_thinking_002",
+        "edge_type": "loop",
+        "condition": "{should_retry} == true and {exceeded_max_retries} == false",
+        "description": "未超过最大重试次数则重新生成大纲",
+        "max_iterations": 3
+      },
+      {
+        "edge_id": "edge_008_sequential",
+        "source": "node_thinking_003",
+        "target": "node_control_003",
+        "edge_type": "sequential",
+        "description": "报告生成完成后输出"
+      }
+    ],
+    "state_schema": {
+      "fields": [
+        {
+          "name": "topic",
+          "type": "string",
+          "required": true,
+          "description": "用户输入的报告主题",
+          "state_type": "input",
+          "validation": {"min_length": 5, "max_length": 200}
+        },
+        {
+          "name": "validated_topic",
+          "type": "string",
+          "required": true,
+          "description": "验证后的主题",
+          "state_type": "intermediate"
+        },
+        {
+          "name": "search_results",
+          "type": "array",
+          "required": true,
+          "description": "搜索到的资料列表",
+          "state_type": "intermediate"
+        },
+        {
+          "name": "organized_data",
+          "type": "object",
+          "required": true,
+          "description": "整理后的结构化数据",
+          "state_type": "intermediate"
+        },
+        {
+          "name": "outline",
+          "type": "object",
+          "required": true,
+          "description": "生成的报告大纲",
+          "state_type": "intermediate"
+        },
+        {
+          "name": "user_approval",
+          "type": "boolean",
+          "required": true,
+          "description": "用户对大纲的批准状态",
+          "state_type": "control",
+          "default": false
+        },
+        {
+          "name": "user_feedback",
+          "type": "string",
+          "required": false,
+          "description": "用户的反馈意见",
+          "state_type": "control"
+        },
+        {
+          "name": "retry_count",
+          "type": "integer",
+          "required": true,
+          "description": "当前重试次数",
+          "state_type": "control",
+          "default": 0,
+          "validation": {"min": 0, "max": 3}
+        },
+        {
+          "name": "final_report",
+          "type": "string",
+          "required": true,
+          "description": "最终生成的完整报告",
+          "state_type": "output"
+        },
+        {
+          "name": "workflow_id",
+          "type": "string",
+          "required": true,
+          "description": "工作流实例标识",
+          "state_type": "control"
+        },
+        {
+          "name": "timestamp",
+          "type": "string",
+          "required": true,
+          "description": "工作流开始时间",
+          "state_type": "control"
+        }
+      ]
+    },
+    "entry_point": "node_control_001",
+    "finish_point": "node_control_003",
+    "config": {
+      "timeout": 1800000,
+      "max_retries": 3,
+      "enable_checkpoint": true,
+      "enable_logging": true,
+      "log_level": "info",
+      "checkpoint_interval": 60000,
+      "error_handling": {
+        "strategy": "continue_on_error",
+        "max_consecutive_errors": 3,
+        "retry_on_error": true
+      }
+    }
+  }
+}

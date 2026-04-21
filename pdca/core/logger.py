@@ -57,8 +57,7 @@ def setup_logging(config: Optional[LogConfig] = None) -> None:
         )
         # 控制台使用彩色输出
         console_formatter = structlog.stdlib.ProcessorFormatter(
-            structlog.stdlib.ProcessorFormatter.remove_processors_meta,
-            fmt='%(message)s'
+            processor=structlog.dev.ConsoleRenderer(),
         )
     else:
         file_formatter = logging.Formatter(

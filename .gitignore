@@ -45,3 +45,11 @@ Thumbs.db
 
 # Project specific
 generated_workflow/
+examples/demo_output/
+
+# Claude local settings
+.claude/settings.local.json
+
+# Environment variables
+.env
+.env.local

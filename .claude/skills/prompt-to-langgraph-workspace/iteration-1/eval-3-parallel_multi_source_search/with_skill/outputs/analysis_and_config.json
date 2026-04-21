@@ -1,0 +1,822 @@
+{
+  "analysis": {
+    "input_summary": "用户需要一个并行搜索工作流,同时从网页、数据库和文档库三个来源搜索资料,然后合并结果并生成摘要。",
+    "identified_nodes": [
+      {
+        "node_name": "输入准备",
+        "source_text": "隐含 - 工作流需要入口点",
+        "inference_type": "implicit",
+        "confidence": 1.0,
+        "reasoning": "任何工作流都需要明确的输入入口来接收搜索查询参数"
+      },
+      {
+        "node_name": "网页搜索",
+        "source_text": "从网页搜索资料",
+        "inference_type": "explicit",
+        "confidence": 1.0,
+        "reasoning": "明确提到的外部搜索操作,需要调用网页搜索工具"
+      },
+      {
+        "node_name": "数据库搜索",
+        "source_text": "从数据库搜索资料",
+        "inference_type": "explicit",
+        "confidence": 1.0,
+        "reasoning": "明确提到的数据库查询操作,需要调用数据库查询工具"
+      },
+      {
+        "node_name": "文档库搜索",
+        "source_text": "从文档库搜索资料",
+        "inference_type": "explicit",
+        "confidence": 1.0,
+        "reasoning": "明确提到的文档检索操作,需要调用文档库搜索工具"
+      },
+      {
+        "node_name": "结果合并",
+        "source_text": "把结果合并",
+        "inference_type": "explicit",
+        "confidence": 0.95,
+        "reasoning": "明确提到的合并操作,需要将三个来源的结果整合"
+      },
+      {
+        "node_name": "摘要生成",
+        "source_text": "最后生成摘要",
+        "inference_type": "explicit",
+        "confidence": 1.0,
+        "reasoning": "明确提到的生成操作,需要LLM进行内容总结"
+      },
+      {
+        "node_name": "结果输出",
+        "source_text": "隐含 - 工作流需要出口点",
+        "inference_type": "implicit",
+        "confidence": 1.0,
+        "reasoning": "任何工作流都需要明确的输出来返回最终结果"
+      },
+      {
+        "node_name": "并行控制",
+        "source_text": "同时从网页、数据库和文档库",
+        "inference_type": "implicit",
+        "confidence": 0.9,
+        "reasoning": "'同时'一词明确表示三个搜索操作应并行执行而非顺序执行"
+      }
+    ],
+    "identified_edges": [
+      {
+        "edge_type": "sequential",
+        "source_text": "隐含 - 从输入到搜索",
+        "source_node": "输入准备",
+        "target_node": "并行控制",
+        "confidence": 1.0,
+        "reasoning": "输入准备好后需要启动搜索流程"
+      },
+      {
+        "edge_type": "parallel",
+        "source_text": "同时从网页、数据库和文档库",
+        "source_node": "并行控制",
+        "target_node": "[网页搜索, 数据库搜索, 文档库搜索]",
+        "confidence": 1.0,
+        "reasoning": "'同时'明确指示三个搜索操作应并行执行"
+      },
+      {
+        "edge_type": "sequential",
+        "source_text": "把结果合并,然后生成摘要",
+        "source_node": "[网页搜索, 数据库搜索, 文档库搜索]",
+        "target_node": "结果合并",
+        "confidence": 1.0,
+        "reasoning": "三个搜索都完成后才能进行合并操作"
+      },
+      {
+        "edge_type": "sequential",
+        "source_text": "合并后生成摘要",
+        "source_node": "结果合并",
+        "target_node": "摘要生成",
+        "confidence": 1.0,
+        "reasoning": "先合并再生成,顺序明确"
+      },
+      {
+        "edge_type": "sequential",
+        "source_text": "隐含 - 最后输出",
+        "source_node": "摘要生成",
+        "target_node": "结果输出",
+        "confidence": 1.0,
+        "reasoning": "生成完成后需要返回结果"
+      }
+    ],
+    "identified_states": [
+      {
+        "field_name": "search_query",
+        "state_type": "input",
+        "source_text": "隐含 - 搜索需要查询词",
+        "confidence": 1.0,
+        "reasoning": "所有搜索操作都需要明确的搜索关键词或查询条件"
+      },
+      {
+        "field_name": "search_params",
+        "state_type": "input",
+        "source_text": "隐含 - 搜索可能需要额外参数",
+        "confidence": 0.85,
+        "reasoning": "搜索可能需要时间范围、数据源等过滤条件"
+      },
+      {
+        "field_name": "web_results",
+        "state_type": "intermediate",
+        "source_text": "从网页搜索资料",
+        "confidence": 1.0,
+        "reasoning": "网页搜索的输出需要存储用于后续合并"
+      },
+      {
+        "field_name": "database_results",
+        "state_type": "intermediate",
+        "source_text": "从数据库搜索资料",
+        "confidence": 1.0,
+        "reasoning": "数据库搜索的输出需要存储用于后续合并"
+      },
+      {
+        "field_name": "document_results",
+        "state_type": "intermediate",
+        "source_text": "从文档库搜索资料",
+        "confidence": 1.0,
+        "reasoning": "文档库搜索的输出需要存储用于后续合并"
+      },
+      {
+        "field_name": "merged_results",
+        "state_type": "intermediate",
+        "source_text": "把结果合并",
+        "confidence": 1.0,
+        "reasoning": "合并后的结果需要传递给摘要生成节点"
+      },
+      {
+        "field_name": "summary",
+        "state_type": "output",
+        "source_text": "最后生成摘要",
+        "confidence": 1.0,
+        "reasoning": "摘要是工作流的最终输出"
+      },
+      {
+        "field_name": "search_status",
+        "state_type": "control",
+        "source_text": "隐含 - 需要跟踪并行任务状态",
+        "confidence": 0.9,
+        "reasoning": "并行执行需要知道哪些任务已完成才能进行合并"
+      }
+    ],
+    "inferences": [
+      {
+        "inference_type": "隐含节点",
+        "content": "添加输入准备节点来接收和验证搜索查询",
+        "reasoning": "任何工作流都需要明确的入口点来接收用户输入",
+        "confidence": 1.0
+      },
+      {
+        "inference_type": "隐含节点",
+        "content": "添加并行控制节点来协调三个并行搜索任务",
+        "reasoning": "'同时'一词明确表示需要并行执行机制",
+        "confidence": 0.95
+      },
+      {
+        "inference_type": "隐含节点",
+        "content": "添加结果输出节点来格式化并返回最终摘要",
+        "reasoning": "工作流需要明确的出口点来返回结果",
+        "confidence": 1.0
+      },
+      {
+        "inference_type": "状态推断",
+        "content": "search_status 控制状态用于跟踪并行任务完成情况",
+        "reasoning": "并行执行需要等待所有任务完成才能合并,需要状态跟踪",
+        "confidence": 0.9
+      },
+      {
+        "inference_type": "状态推断",
+        "content": "merged_results 需要包含来源标记以便在摘要中区分",
+        "reasoning": "合并后的结果应该保留来源信息以便生成更准确的摘要",
+        "confidence": 0.85
+      }
+    ],
+    "ambiguities": [
+      {
+        "type": "动作对象不明",
+        "source_text": "从网页搜索资料",
+        "question": "网页搜索的具体范围是什么?(全网搜索/特定网站/搜索引擎)",
+        "suggested_options": ["使用通用搜索引擎(如Google/Bing)", "搜索特定网站列表", "使用新闻/学术等专用搜索"]
+      },
+      {
+        "type": "动作对象不明",
+        "source_text": "从数据库搜索资料",
+        "question": "数据库的类型和连接方式是什么?",
+        "suggested_options": ["关系型数据库(MySQL/PostgreSQL)", "NoSQL数据库(MongoDB/Redis)", "向量数据库用于语义搜索"]
+      },
+      {
+        "type": "动作对象不明",
+        "source_text": "从文档库搜索资料",
+        "question": "文档库的具体类型是什么?",
+        "suggested_options": ["本地文件系统", "云存储(S3/OSS)", "文档管理系统(如Confluence/Notion)", "向量数据库(如Pinecone/Weaviate)"]
+      },
+      {
+        "type": "动作对象不明",
+        "source_text": "生成摘要",
+        "question": "摘要的具体要求和格式是什么?",
+        "suggested_options": ["简洁摘要(100字以内)", "详细摘要(300-500字)", "结构化摘要(包含关键点列表)", "多语言摘要"]
+      }
+    ],
+    "assumptions": [
+      {
+        "assumption": "使用通用网页搜索API进行网页搜索",
+        "reason": "用户未指定具体搜索范围,采用最通用的方案",
+        "impact": "如果需要特定网站搜索,需要修改工具配置"
+      },
+      {
+        "assumption": "数据库为标准关系型数据库,使用SQL查询",
+        "reason": "最常见的数据存储场景",
+        "impact": "如果是NoSQL或向量数据库,需要调整查询方式"
+      },
+      {
+        "assumption": "文档库为支持全文检索的文档存储系统",
+        "reason": "典型的企业文档管理场景",
+        "impact": "如果使用向量语义搜索,需要配置嵌入模型"
+      },
+      {
+        "assumption": "摘要为单一连贯的文本段落,包含各来源的关键信息",
+        "reason": "最通用的摘要格式",
+        "impact": "如果需要特定格式(如结构化、多语言),需要调整提示词模板"
+      },
+      {
+        "assumption": "三个搜索操作完全独立,可以无依赖并行执行",
+        "reason": "用户使用'同时'一词,且三个来源无数据依赖",
+        "impact": "如果有依赖关系,需要调整并行策略"
+      }
+    ]
+  },
+  "config": {
+    "workflow_id": "wf_parallel_multi_source_search_001",
+    "workflow_name": "并行多源搜索与摘要生成",
+    "description": "同时从网页、数据库和文档库三个来源并行搜索资料,合并所有结果后生成综合性摘要的工作流。适用于需要综合多个信息来源的场景。",
+    "version": "1.0.0",
+    "metadata": {
+      "author": "AI Assistant",
+      "created_at": "2024-01-15T10:30:00Z",
+      "source_input": "帮我设计一个工作流：同时从网页、数据库和文档库三个来源搜索资料,然后把结果合并,最后生成摘要"
+    },
+    "nodes": [
+      {
+        "node_id": "node_control_001",
+        "node_name": "输入准备",
+        "node_type": "control_node",
+        "node_subtype": "input_node",
+        "description": "接收并验证用户的搜索查询,提取搜索关键词和参数",
+        "input_schema": {
+          "fields": [
+            {
+              "name": "raw_input",
+              "type": "object",
+              "required": true,
+              "description": "原始输入对象,包含搜索查询和可选参数"
+            }
+          ]
+        },
+        "output_schema": {
+          "fields": [
+            {
+              "name": "search_query",
+              "type": "string",
+              "required": true,
+              "description": "提取的搜索关键词或查询语句"
+            },
+            {
+              "name": "search_params",
+              "type": "object",
+              "required": false,
+              "description": "搜索参数,如时间范围、结果数量限制等"
+            }
+          ]
+        },
+        "config": {
+          "validation_rules": [
+            {
+              "field": "search_query",
+              "rule": "min_length:1",
+              "message": "搜索查询不能为空"
+            }
+          ]
+        },
+        "metadata": {
+          "inference_type": "implicit",
+          "source_text": "隐含 - 工作流需要入口点"
+        }
+      },
+      {
+        "node_id": "node_control_002",
+        "node_name": "并行控制",
+        "node_type": "control_node",
+        "node_subtype": "parallel_node",
+        "description": "协调三个并行搜索任务的执行,等待所有任务完成后继续",
+        "input_schema": {
+          "fields": [
+            {
+              "name": "search_query",
+              "type": "string",
+              "required": true
+            },
+            {
+              "name": "search_params",
+              "type": "object",
+              "required": false
+            }
+          ]
+        },
+        "output_schema": {
+          "fields": [
+            {
+              "name": "parallel_tasks_status",
+              "type": "object",
+              "required": true,
+              "description": "并行任务执行状态跟踪"
+            }
+          ]
+        },
+        "config": {
+          "parallel_branches": [
+            "node_tool_001",
+            "node_tool_002",
+            "node_tool_003"
+          ],
+          "wait_strategy": "all_complete",
+          "timeout": 60000
+        },
+        "metadata": {
+          "inference_type": "implicit",
+          "source_text": "同时从网页、数据库和文档库"
+        }
+      },
+      {
+        "node_id": "node_tool_001",
+        "node_name": "网页搜索",
+        "node_type": "tool_node",
+        "node_subtype": "search",
+        "description": "使用搜索引擎从互联网搜索相关资料和信息",
+        "input_schema": {
+          "fields": [
+            {
+              "name": "search_query",
+              "type": "string",
+              "required": true,
+              "description": "搜索关键词"
+            },
+            {
+              "name": "search_params",
+              "type": "object",
+              "required": false,
+              "description": "搜索参数,如结果数量、语言限制等"
+            }
+          ]
+        },
+        "output_schema": {
+          "fields": [
+            {
+              "name": "web_results",
+              "type": "array",
+              "required": true,
+              "description": "搜索结果列表,包含标题、链接、摘要等"
+            },
+            {
+              "name": "result_count",
+              "type": "integer",
+              "required": true,
+              "description": "返回的结果数量"
+            }
+          ]
+        },
+        "config": {
+          "tool_name": "web_search",
+          "tool_config": {
+            "engine": "google",
+            "max_results": 10,
+            "language": "auto"
+          },
+          "retry_config": {
+            "max_retries": 3,
+            "backoff_factor": 2
+          }
+        },
+        "metadata": {
+          "inference_type": "explicit",
+          "source_text": "从网页搜索资料"
+        }
+      },
+      {
+        "node_id": "node_tool_002",
+        "node_name": "数据库搜索",
+        "node_type": "tool_node",
+        "node_subtype": "database",
+        "description": "从数据库中查询相关的结构化数据和记录",
+        "input_schema": {
+          "fields": [
+            {
+              "name": "search_query",
+              "type": "string",
+              "required": true,
+              "description": "数据库查询条件或SQL语句"
+            },
+            {
+              "name": "search_params",
+              "type": "object",
+              "required": false,
+              "description": "查询参数,如表名、字段过滤等"
+            }
+          ]
+        },
+        "output_schema": {
+          "fields": [
+            {
+              "name": "database_results",
+              "type": "array",
+              "required": true,
+              "description": "查询结果记录列表"
+            },
+            {
+              "name": "result_count",
+              "type": "integer",
+              "required": true,
+              "description": "返回的记录数量"
+            }
+          ]
+        },
+        "config": {
+          "tool_name": "database_query",
+          "tool_config": {
+            "database_type": "postgresql",
+            "connection_string": "${DATABASE_URL}",
+            "query_timeout": 30000
+          },
+          "retry_config": {
+            "max_retries": 2,
+            "backoff_factor": 1.5
+          }
+        },
+        "metadata": {
+          "inference_type": "explicit",
+          "source_text": "从数据库搜索资料"
+        }
+      },
+      {
+        "node_id": "node_tool_003",
+        "node_name": "文档库搜索",
+        "node_type": "tool_node",
+        "node_subtype": "search",
+        "description": "从文档库中检索相关文档和资料",
+        "input_schema": {
+          "fields": [
+            {
+              "name": "search_query",
+              "type": "string",
+              "required": true,
+              "description": "文档检索关键词或查询语句"
+            },
+            {
+              "name": "search_params",
+              "type": "object",
+              "required": false,
+              "description": "检索参数,如文档类型、时间范围等"
+            }
+          ]
+        },
+        "output_schema": {
+          "fields": [
+            {
+              "name": "document_results",
+              "type": "array",
+              "required": true,
+              "description": "检索到的文档列表,包含标题、路径、摘要等"
+            },
+            {
+              "name": "result_count",
+              "type": "integer",
+              "required": true,
+              "description": "返回的文档数量"
+            }
+          ]
+        },
+        "config": {
+          "tool_name": "document_search",
+          "tool_config": {
+            "document_store_type": "elasticsearch",
+            "index_name": "documents",
+            "max_results": 10
+          },
+          "retry_config": {
+            "max_retries": 2,
+            "backoff_factor": 1.5
+          }
+        },
+        "metadata": {
+          "inference_type": "explicit",
+          "source_text": "从文档库搜索资料"
+        }
+      },
+      {
+        "node_id": "node_control_003",
+        "node_name": "结果合并",
+        "node_type": "control_node",
+        "node_subtype": "merge_node",
+        "description": "将三个来源的搜索结果合并为统一的格式,保留来源标记",
+        "input_schema": {
+          "fields": [
+            {
+              "name": "web_results",
+              "type": "array",
+              "required": true,
+              "description": "网页搜索结果"
+            },
+            {
+              "name": "database_results",
+              "type": "array",
+              "required": true,
+              "description": "数据库查询结果"
+            },
+            {
+              "name": "document_results",
+              "type": "array",
+              "required": true,
+              "description": "文档库检索结果"
+            }
+          ]
+        },
+        "output_schema": {
+          "fields": [
+            {
+              "name": "merged_results",
+              "type": "object",
+              "required": true,
+              "description": "合并后的结果对象,按来源分组并包含统计信息"
+            }
+          ]
+        },
+        "config": {
+          "merge_strategy": "group_by_source",
+          "deduplication": true,
+          "include_metadata": true
+        },
+        "metadata": {
+          "inference_type": "explicit",
+          "source_text": "把结果合并"
+        }
+      },
+      {
+        "node_id": "node_thinking_001",
+        "node_name": "摘要生成",
+        "node_type": "thinking_node",
+        "node_subtype": "summarization",
+        "description": "基于合并后的多源搜索结果生成综合性摘要,突出关键信息和跨来源的关联",
+        "input_schema": {
+          "fields": [
+            {
+              "name": "merged_results",
+              "type": "object",
+              "required": true,
+              "description": "合并后的搜索结果"
+            }
+          ]
+        },
+        "output_schema": {
+          "fields": [
+            {
+              "name": "summary",
+              "type": "string",
+              "required": true,
+              "description": "生成的综合摘要文本"
+            },
+            {
+              "name": "key_points",
+              "type": "array",
+              "required": false,
+              "description": "提取的关键要点列表"
+            }
+          ]
+        },
+        "config": {
+          "prompt_template": "你是一个专业的信息分析助手。基于以下来自多个来源的搜索结果,生成一个清晰、准确、综合性的摘要。\n\n## 搜索结果\n\n### 网页来源\n{web_results}\n\n### 数据库来源\n{database_results}\n\n### 文档库来源\n{document_results}\n\n## 要求\n\n1. 摘要应该全面涵盖三个来源的关键信息\n2. 突出跨来源的一致点和差异点\n3. 按重要性组织信息,优先呈现最相关的内容\n4. 保持客观中立,注明信息来源\n5. 摘要长度控制在300-500字\n\n请生成摘要:",
+          "model": "claude-3-5-sonnet-20241022",
+          "temperature": 0.3,
+          "max_tokens": 1000
+        },
+        "metadata": {
+          "inference_type": "explicit",
+          "source_text": "最后生成摘要"
+        }
+      },
+      {
+        "node_id": "node_control_004",
+        "node_name": "结果输出",
+        "node_type": "control_node",
+        "node_subtype": "output_node",
+        "description": "格式化并输出最终结果,包括摘要和原始结果引用",
+        "input_schema": {
+          "fields": [
+            {
+              "name": "summary",
+              "type": "string",
+              "required": true,
+              "description": "生成的摘要"
+            },
+            {
+              "name": "key_points",
+              "type": "array",
+              "required": false,
+              "description": "关键要点列表"
+            },
+            {
+              "name": "merged_results",
+              "type": "object",
+              "required": false,
+              "description": "合并的原始结果(用于详细引用)"
+            }
+          ]
+        },
+        "output_schema": {
+          "fields": [
+            {
+              "name": "final_output",
+              "type": "object",
+              "required": true,
+              "description": "格式化的最终输出对象"
+            }
+          ]
+        },
+        "config": {
+          "output_format": "structured",
+          "include_metadata": true,
+          "include_timestamp": true
+        },
+        "metadata": {
+          "inference_type": "implicit",
+          "source_text": "隐含 - 工作流需要出口点"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "edge_id": "edge_001_input_to_parallel",
+        "source": "node_control_001",
+        "target": "node_control_002",
+        "edge_type": "sequential",
+        "condition": null
+      },
+      {
+        "edge_id": "edge_002_parallel_to_web",
+        "source": "node_control_002",
+        "target": "node_tool_001",
+        "edge_type": "parallel",
+        "condition": null
+      },
+      {
+        "edge_id": "edge_003_parallel_to_database",
+        "source": "node_control_002",
+        "target": "node_tool_002",
+        "edge_type": "parallel",
+        "condition": null
+      },
+      {
+        "edge_id": "edge_004_parallel_to_document",
+        "source": "node_control_002",
+        "target": "node_tool_003",
+        "edge_type": "parallel",
+        "condition": null
+      },
+      {
+        "edge_id": "edge_005_web_to_merge",
+        "source": "node_tool_001",
+        "target": "node_control_003",
+        "edge_type": "sequential",
+        "condition": null
+      },
+      {
+        "edge_id": "edge_006_database_to_merge",
+        "source": "node_tool_002",
+        "target": "node_control_003",
+        "edge_type": "sequential",
+        "condition": null
+      },
+      {
+        "edge_id": "edge_007_document_to_merge",
+        "source": "node_tool_003",
+        "target": "node_control_003",
+        "edge_type": "sequential",
+        "condition": null
+      },
+      {
+        "edge_id": "edge_008_merge_to_summary",
+        "source": "node_control_003",
+        "target": "node_thinking_001",
+        "edge_type": "sequential",
+        "condition": null
+      },
+      {
+        "edge_id": "edge_009_summary_to_output",
+        "source": "node_thinking_001",
+        "target": "node_control_004",
+        "edge_type": "sequential",
+        "condition": null
+      }
+    ],
+    "state_schema": {
+      "fields": [
+        {
+          "name": "search_query",
+          "type": "string",
+          "required": true,
+          "description": "搜索关键词或查询语句",
+          "state_type": "input",
+          "default_value": null
+        },
+        {
+          "name": "search_params",
+          "type": "object",
+          "required": false,
+          "description": "搜索参数,包含时间范围、结果数量等配置",
+          "state_type": "input",
+          "default_value": {
+            "max_results": 10,
+            "time_range": "last_30_days"
+          }
+        },
+        {
+          "name": "web_results",
+          "type": "array",
+          "required": true,
+          "description": "网页搜索结果列表",
+          "state_type": "intermediate",
+          "default_value": null
+        },
+        {
+          "name": "database_results",
+          "type": "array",
+          "required": true,
+          "description": "数据库查询结果列表",
+          "state_type": "intermediate",
+          "default_value": null
+        },
+        {
+          "name": "document_results",
+          "type": "array",
+          "required": true,
+          "description": "文档库检索结果列表",
+          "state_type": "intermediate",
+          "default_value": null
+        },
+        {
+          "name": "merged_results",
+          "type": "object",
+          "required": true,
+          "description": "合并后的结果对象,包含所有来源的数据",
+          "state_type": "intermediate",
+          "default_value": null
+        },
+        {
+          "name": "search_status",
+          "type": "object",
+          "required": true,
+          "description": "并行搜索任务状态跟踪,记录每个任务的完成情况",
+          "state_type": "control",
+          "default_value": {
+            "web_search": "pending",
+            "database_search": "pending",
+            "document_search": "pending"
+          }
+        },
+        {
+          "name": "summary",
+          "type": "string",
+          "required": true,
+          "description": "生成的综合摘要",
+          "state_type": "output",
+          "default_value": null
+        },
+        {
+          "name": "key_points",
+          "type": "array",
+          "required": false,
+          "description": "从摘要中提取的关键要点",
+          "state_type": "output",
+          "default_value": null
+        }
+      ]
+    },
+    "entry_point": "node_control_001",
+    "finish_point": "node_control_004",
+    "config": {
+      "timeout": 300000,
+      "max_retries": 3,
+      "enable_checkpoint": true,
+      "enable_logging": true,
+      "log_level": "info",
+      "parallel_execution": {
+        "enabled": true,
+        "max_concurrent_tasks": 3,
+        "task_timeout": 60000
+      },
+      "error_handling": {
+        "strategy": "continue_on_error",
+        "partial_results": true,
+        "error_threshold": 2
+      }
+    }
+  }
+}

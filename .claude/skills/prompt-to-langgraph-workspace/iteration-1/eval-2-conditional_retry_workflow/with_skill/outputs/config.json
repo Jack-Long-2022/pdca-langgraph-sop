@@ -1,0 +1,695 @@
+{
+  "workflow_id": "wf_search_analyze_retry_001",
+  "workflow_name": "搜索分析重试工作流",
+  "description": "自动化数据搜索流程，包含条件判断（成功/失败）、失败重试机制（最多3次）、结果分析和报告生成功能",
+  "version": "1.0.0",
+  "metadata": {
+    "author": "AI Assistant",
+    "created_at": "2024-01-15T10:30:00Z",
+    "source_input": "我需要自动化这个流程：先搜索数据，如果搜索成功就分析结果，如果失败就重试最多3次。分析完成后生成报告。"
+  },
+  "nodes": [
+    {
+      "node_id": "node_control_001",
+      "node_name": "输入准备",
+      "node_type": "control_node",
+      "node_subtype": "input_node",
+      "description": "接收并验证用户输入的搜索参数，包括搜索关键词和配置选项",
+      "input_schema": {
+        "fields": [
+          {
+            "name": "search_query",
+            "type": "string",
+            "required": true,
+            "description": "搜索关键词或查询语句"
+          },
+          {
+            "name": "search_config",
+            "type": "object",
+            "required": false,
+            "description": "搜索配置参数（如结果数量、语言等）"
+          }
+        ]
+      },
+      "output_schema": {
+        "fields": [
+          {
+            "name": "validated_query",
+            "type": "string",
+            "required": true,
+            "description": "验证后的搜索查询"
+          },
+          {
+            "name": "execution_id",
+            "type": "string",
+            "required": true,
+            "description": "本次执行的唯一标识"
+          }
+        ]
+      },
+      "config": {
+        "validation_rules": [
+          {
+            "field": "search_query",
+            "rule": "min_length",
+            "value": 2
+          }
+        ]
+      },
+      "metadata": {
+        "inference_type": "implicit",
+        "source_text": "隐含入口节点"
+      }
+    },
+    {
+      "node_id": "node_tool_001",
+      "node_name": "数据搜索",
+      "node_type": "tool_node",
+      "node_subtype": "search",
+      "description": "执行数据搜索操作，支持多种数据源（网页搜索、数据库查询、API调用等）",
+      "input_schema": {
+        "fields": [
+          {
+            "name": "query",
+            "type": "string",
+            "required": true,
+            "description": "搜索查询语句"
+          },
+          {
+            "name": "retry_count",
+            "type": "integer",
+            "required": false,
+            "description": "当前重试次数"
+          }
+        ]
+      },
+      "output_schema": {
+        "fields": [
+          {
+            "name": "result",
+            "type": "object",
+            "required": true,
+            "description": "搜索结果对象"
+          },
+          {
+            "name": "success",
+            "type": "boolean",
+            "required": true,
+            "description": "搜索是否成功"
+          },
+          {
+            "name": "error",
+            "type": "string",
+            "required": false,
+            "description": "错误信息（如果失败）"
+          },
+          {
+            "name": "timestamp",
+            "type": "string",
+            "required": true,
+            "description": "搜索执行时间戳"
+          }
+        ]
+      },
+      "config": {
+        "tool_type": "web_search",
+        "timeout": 30000,
+        "max_results": 10,
+        "search_engine": "default"
+      },
+      "metadata": {
+        "inference_type": "explicit",
+        "source_text": "先搜索数据"
+      }
+    },
+    {
+      "node_id": "node_control_002",
+      "node_name": "结果检查",
+      "node_type": "control_node",
+      "node_subtype": "condition_node",
+      "description": "检查搜索结果，判断是否成功，决定执行分析还是重试",
+      "input_schema": {
+        "fields": [
+          {
+            "name": "search_result",
+            "type": "object",
+            "required": true,
+            "description": "搜索节点返回的结果"
+          },
+          {
+            "name": "retry_count",
+            "type": "integer",
+            "required": true,
+            "description": "当前重试次数"
+          },
+          {
+            "name": "max_retries",
+            "type": "integer",
+            "required": true,
+            "description": "最大重试次数"
+          }
+        ]
+      },
+      "output_schema": {
+        "fields": [
+          {
+            "name": "decision",
+            "type": "string",
+            "required": true,
+            "description": "决策结果：success, retry, failed"
+          },
+          {
+            "name": "next_node",
+            "type": "string",
+            "required": true,
+            "description": "下一个执行的节点ID"
+          }
+        ]
+      },
+      "config": {
+        "condition_expression": "search_result.success == true ? 'success' : (retry_count < max_retries ? 'retry' : 'failed')"
+      },
+      "metadata": {
+        "inference_type": "explicit",
+        "source_text": "如果搜索成功就分析结果，如果失败就重试"
+      }
+    },
+    {
+      "node_id": "node_control_003",
+      "node_name": "重试控制",
+      "node_type": "control_node",
+      "node_subtype": "loop_node",
+      "description": "管理重试逻辑，增加重试计数，实现退避策略",
+      "input_schema": {
+        "fields": [
+          {
+            "name": "retry_count",
+            "type": "integer",
+            "required": true,
+            "description": "当前重试次数"
+          },
+          {
+            "name": "max_retries",
+            "type": "integer",
+            "required": true,
+            "description": "最大重试次数"
+          },
+          {
+            "name": "last_error",
+            "type": "string",
+            "required": false,
+            "description": "最后一次的错误信息"
+          }
+        ]
+      },
+      "output_schema": {
+        "fields": [
+          {
+            "name": "new_retry_count",
+            "type": "integer",
+            "required": true,
+            "description": "增加后的重试次数"
+          },
+          {
+            "name": "can_retry",
+            "type": "boolean",
+            "required": true,
+            "description": "是否可以继续重试"
+          },
+          {
+            "name": "delay_ms",
+            "type": "integer",
+            "required": true,
+            "description": "重试延迟时间（毫秒）"
+          }
+        ]
+      },
+      "config": {
+        "retry_strategy": "fixed_delay",
+        "delay_ms": 1000,
+        "backoff_multiplier": 1.5,
+        "max_delay_ms": 5000
+      },
+      "metadata": {
+        "inference_type": "explicit",
+        "source_text": "如果失败就重试最多3次"
+      }
+    },
+    {
+      "node_id": "node_thinking_001",
+      "node_name": "结果分析",
+      "node_type": "thinking_node",
+      "node_subtype": "analysis",
+      "description": "分析搜索结果，提取关键信息，生成摘要和洞察",
+      "input_schema": {
+        "fields": [
+          {
+            "name": "search_result",
+            "type": "object",
+            "required": true,
+            "description": "搜索成功的结果数据"
+          },
+          {
+            "name": "analysis_config",
+            "type": "object",
+            "required": false,
+            "description": "分析配置参数"
+          }
+        ]
+      },
+      "output_schema": {
+        "fields": [
+          {
+            "name": "summary",
+            "type": "string",
+            "required": true,
+            "description": "结果摘要"
+          },
+          {
+            "name": "key_points",
+            "type": "array",
+            "required": true,
+            "description": "关键信息点列表"
+          },
+          {
+            "name": "insights",
+            "type": "array",
+            "required": false,
+            "description": "额外洞察和分析"
+          },
+          {
+            "name": "confidence_score",
+            "type": "number",
+            "required": true,
+            "description": "分析置信度分数（0-1）"
+          }
+        ]
+      },
+      "config": {
+        "prompt_template": "分析以下搜索结果，提取关键信息和主要观点：\n\n搜索结果：{search_result}\n\n请提供：\n1. 结果摘要（3-5句话）\n2. 关键信息点（5-10条）\n3. 重要洞察（如果有）",
+        "model": "default",
+        "temperature": 0.3,
+        "max_tokens": 1000
+      },
+      "metadata": {
+        "inference_type": "explicit",
+        "source_text": "就分析结果"
+      }
+    },
+    {
+      "node_id": "node_thinking_002",
+      "node_name": "报告生成",
+      "node_type": "thinking_node",
+      "node_subtype": "generation",
+      "description": "根据分析结果生成结构化的报告文档",
+      "input_schema": {
+        "fields": [
+          {
+            "name": "analysis_result",
+            "type": "object",
+            "required": true,
+            "description": "分析节点的输出结果"
+          },
+          {
+            "name": "search_metadata",
+            "type": "object",
+            "required": true,
+            "description": "搜索元数据（查询、时间、重试次数等）"
+          },
+          {
+            "name": "report_format",
+            "type": "string",
+            "required": false,
+            "description": "报告格式类型（markdown/json/html）"
+          }
+        ]
+      },
+      "output_schema": {
+        "fields": [
+          {
+            "name": "report_content",
+            "type": "string",
+            "required": true,
+            "description": "生成的报告内容"
+          },
+          {
+            "name": "report_type",
+            "type": "string",
+            "required": true,
+            "description": "报告类型标识"
+          },
+          {
+            "name": "word_count",
+            "type": "integer",
+            "required": true,
+            "description": "报告字数统计"
+          },
+          {
+            "name": "generated_at",
+            "type": "string",
+            "required": true,
+            "description": "报告生成时间戳"
+          }
+        ]
+      },
+      "config": {
+        "prompt_template": "基于以下分析结果生成一份完整的报告：\n\n分析结果：{analysis_result}\n搜索元数据：{search_metadata}\n\n报告要求：\n1. 清晰的标题和结构\n2. 包含摘要、主要发现、详细分析\n3. 使用Markdown格式\n4. 适当使用列表和标题层级",
+        "model": "default",
+        "temperature": 0.5,
+        "max_tokens": 2000,
+        "default_format": "markdown"
+      },
+      "metadata": {
+        "inference_type": "explicit",
+        "source_text": "分析完成后生成报告"
+      }
+    },
+    {
+      "node_id": "node_control_004",
+      "node_name": "错误处理",
+      "node_type": "control_node",
+      "node_subtype": "error_handler",
+      "description": "处理重试耗尽后的错误情况，生成错误报告",
+      "input_schema": {
+        "fields": [
+          {
+            "name": "last_error",
+            "type": "string",
+            "required": true,
+            "description": "最后一次失败的错误信息"
+          },
+          {
+            "name": "total_retries",
+            "type": "integer",
+            "required": true,
+            "description": "执行的重试总次数"
+          },
+          {
+            "name": "original_query",
+            "type": "string",
+            "required": true,
+            "description": "原始搜索查询"
+          }
+        ]
+      },
+      "output_schema": {
+        "fields": [
+          {
+            "name": "error_report",
+            "type": "object",
+            "required": true,
+            "description": "错误报告对象"
+          },
+          {
+            "name": "error_code",
+            "type": "string",
+            "required": true,
+            "description": "错误代码"
+          },
+          {
+            "name": "retry_summary",
+            "type": "object",
+            "required": true,
+            "description": "重试尝试摘要"
+          }
+        ]
+      },
+      "config": {
+        "log_errors": true,
+        "notify_on_failure": false,
+        "save_partial_results": false
+      },
+      "metadata": {
+        "inference_type": "implicit",
+        "source_text": "隐含错误处理"
+      }
+    },
+    {
+      "node_id": "node_control_005",
+      "node_name": "输出节点",
+      "node_type": "control_node",
+      "node_subtype": "output_node",
+      "description": "统一格式化输出最终结果（成功报告或错误信息）",
+      "input_schema": {
+        "fields": [
+          {
+            "name": "result_type",
+            "type": "string",
+            "required": true,
+            "description": "结果类型：success 或 error"
+          },
+          {
+            "name": "payload",
+            "type": "object",
+            "required": true,
+            "description": "结果数据（报告或错误信息）"
+          },
+          {
+            "name": "execution_metadata",
+            "type": "object",
+            "required": true,
+            "description": "执行元数据"
+          }
+        ]
+      },
+      "output_schema": {
+        "fields": [
+          {
+            "name": "final_output",
+            "type": "object",
+            "required": true,
+            "description": "格式化后的最终输出"
+          },
+          {
+            "name": "status",
+            "type": "string",
+            "required": true,
+            "description": "执行状态：completed, failed, partial"
+          }
+        ]
+      },
+      "config": {
+        "output_format": "json",
+        "include_metadata": true,
+        "compress_output": false
+      },
+      "metadata": {
+        "inference_type": "implicit",
+        "source_text": "隐含出口节点"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "edge_id": "edge_001_sequential",
+      "source": "node_control_001",
+      "target": "node_tool_001",
+      "edge_type": "sequential",
+      "config": {}
+    },
+    {
+      "edge_id": "edge_002_conditional",
+      "source": "node_tool_001",
+      "target": "node_control_002",
+      "edge_type": "conditional",
+      "config": {
+        "condition_expression": "search_result.success",
+        "true_target": "node_thinking_001",
+        "false_target": "node_control_003"
+      }
+    },
+    {
+      "edge_id": "edge_003_sequential",
+      "source": "node_control_002",
+      "target": "node_thinking_001",
+      "edge_type": "conditional",
+      "config": {
+        "condition": "decision == 'success'"
+      }
+    },
+    {
+      "edge_id": "edge_004_loop",
+      "source": "node_control_002",
+      "target": "node_control_003",
+      "edge_type": "loop",
+      "config": {
+        "condition": "decision == 'retry'",
+        "exit_condition": "retry_count >= max_retries"
+      }
+    },
+    {
+      "edge_id": "edge_005_retry",
+      "source": "node_control_003",
+      "target": "node_tool_001",
+      "edge_type": "loop",
+      "config": {
+        "update_state": {
+          "retry_count": "new_retry_count"
+        }
+      }
+    },
+    {
+      "edge_id": "edge_006_sequential",
+      "source": "node_thinking_001",
+      "target": "node_thinking_002",
+      "edge_type": "sequential",
+      "config": {}
+    },
+    {
+      "edge_id": "edge_007_sequential",
+      "source": "node_thinking_002",
+      "target": "node_control_005",
+      "edge_type": "sequential",
+      "config": {
+        "pass_state": {
+          "result_type": "success",
+          "payload": "report_content"
+        }
+      }
+    },
+    {
+      "edge_id": "edge_008_error",
+      "source": "node_control_003",
+      "target": "node_control_004",
+      "edge_type": "error",
+      "config": {
+        "trigger_condition": "can_retry == false",
+        "error_type": "max_retries_exceeded"
+      }
+    },
+    {
+      "edge_id": "edge_009_sequential",
+      "source": "node_control_004",
+      "target": "node_control_005",
+      "edge_type": "sequential",
+      "config": {
+        "pass_state": {
+          "result_type": "error",
+          "payload": "error_report"
+        }
+      }
+    }
+  ],
+  "state_schema": {
+    "fields": [
+      {
+        "name": "search_query",
+        "type": "string",
+        "required": true,
+        "description": "用户输入的搜索查询",
+        "state_type": "input",
+        "default_value": null
+      },
+      {
+        "name": "validated_query",
+        "type": "string",
+        "required": true,
+        "description": "验证后的查询语句",
+        "state_type": "intermediate",
+        "default_value": null
+      },
+      {
+        "name": "search_result",
+        "type": "object",
+        "required": true,
+        "description": "搜索操作返回的结果",
+        "state_type": "intermediate",
+        "default_value": null
+      },
+      {
+        "name": "is_success",
+        "type": "boolean",
+        "required": true,
+        "description": "搜索是否成功的标志",
+        "state_type": "control",
+        "default_value": false
+      },
+      {
+        "name": "retry_count",
+        "type": "integer",
+        "required": true,
+        "description": "当前已执行的重试次数",
+        "state_type": "control",
+        "default_value": 0
+      },
+      {
+        "name": "max_retries",
+        "type": "integer",
+        "required": true,
+        "description": "最大重试次数限制",
+        "state_type": "control",
+        "default_value": 3
+      },
+      {
+        "name": "analysis_result",
+        "type": "object",
+        "required": true,
+        "description": "分析节点的输出结果",
+        "state_type": "intermediate",
+        "default_value": null
+      },
+      {
+        "name": "final_report",
+        "type": "string",
+        "required": true,
+        "description": "生成的最终报告内容",
+        "state_type": "output",
+        "default_value": null
+      },
+      {
+        "name": "error_message",
+        "type": "string",
+        "required": false,
+        "description": "错误信息（如果发生错误）",
+        "state_type": "intermediate",
+        "default_value": null
+      },
+      {
+        "name": "execution_status",
+        "type": "string",
+        "required": true,
+        "description": "整体执行状态",
+        "state_type": "control",
+        "default_value": "in_progress",
+        "enum": ["in_progress", "completed", "failed", "partial"]
+      },
+      {
+        "name": "execution_id",
+        "type": "string",
+        "required": true,
+        "description": "执行会话的唯一标识",
+        "state_type": "control",
+        "default_value": null
+      },
+      {
+        "name": "start_time",
+        "type": "string",
+        "required": true,
+        "description": "工作流开始时间",
+        "state_type": "control",
+        "default_value": null
+      },
+      {
+        "name": "end_time",
+        "type": "string",
+        "required": false,
+        "description": "工作流结束时间",
+        "state_type": "control",
+        "default_value": null
+      }
+    ]
+  },
+  "entry_point": "node_control_001",
+  "finish_point": "node_control_005",
+  "config": {
+    "timeout": 300000,
+    "max_retries": 3,
+    "enable_checkpoint": true,
+    "enable_logging": true,
+    "log_level": "info",
+    "retry_strategy": "fixed_delay",
+    "retry_delay_ms": 1000,
+    "error_handling": "graceful",
+    "enable_metrics": true
+  }
+}

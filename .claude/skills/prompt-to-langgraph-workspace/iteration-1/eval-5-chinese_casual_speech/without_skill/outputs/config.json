@@ -1,0 +1,473 @@
+{
+  "workflow_id": "wf_auto_report_generation_001",
+  "workflow_name": "自动报告生成工作流",
+  "description": "一个自动化的报告生成流程：接收用户主题→搜索相关资料→整理搜索结果→AI生成报告大纲→用户审核确认（最多重试3次）→生成完整报告",
+  "version": "1.0.0",
+  "metadata": {
+    "author": "AI Assistant",
+    "created_at": "2024-04-21T06:30:00Z",
+    "source_input": "那个，我想做一个自动写报告的流程。首先呢，用户输入一个主题，然后系统去搜索相关的资料，搜完之后呢，把结果整理一下，然后让AI分析生成一个报告大纲。大纲生成之后，如果用户觉得不满意，可以让AI重新生成，最多重试3次。大纲确定后，再根据大纲写完整的报告内容。"
+  },
+  "nodes": [
+    {
+      "node_id": "node_control_001",
+      "node_name": "输入准备",
+      "node_type": "control_node",
+      "node_subtype": "input_node",
+      "description": "接收并验证用户输入的报告主题，确保主题格式正确且不为空",
+      "input_schema": {
+        "fields": [
+          {
+            "name": "raw_input",
+            "type": "object",
+            "required": true,
+            "description": "用户原始输入数据"
+          }
+        ]
+      },
+      "output_schema": {
+        "fields": [
+          {
+            "name": "topic",
+            "type": "string",
+            "required": true,
+            "description": "验证后的报告主题"
+          }
+        ]
+      },
+      "config": {
+        "validation_rules": [
+          {
+            "field": "topic",
+            "rule": "not_empty",
+            "message": "主题不能为空"
+          },
+          {
+            "field": "topic",
+            "rule": "min_length",
+            "value": 5,
+            "message": "主题至少需要5个字符"
+          }
+        ]
+      },
+      "metadata": {
+        "inference_type": "implicit",
+        "source_text": "用户输入一个主题"
+      }
+    },
+    {
+      "node_id": "node_tool_001",
+      "node_name": "搜索资料",
+      "node_type": "tool_node",
+      "node_subtype": "search",
+      "description": "根据用户提供的主题执行网络搜索，获取相关的资料和参考信息",
+      "input_schema": {
+        "fields": [
+          {
+            "name": "topic",
+            "type": "string",
+            "required": true,
+            "description": "搜索关键词"
+          },
+          {
+            "name": "max_results",
+            "type": "integer",
+            "required": false,
+            "default": 10,
+            "description": "最大搜索结果数量"
+          }
+        ]
+      },
+      "output_schema": {
+        "fields": [
+          {
+            "name": "search_results",
+            "type": "array",
+            "required": true,
+            "description": "搜索结果列表，每个结果包含标题、URL、摘要"
+          }
+        ]
+      },
+      "config": {
+        "tool_name": "web_search",
+        "search_engine": "default",
+        "timeout": 30000,
+        "retry_on_failure": true,
+        "max_retries": 2
+      },
+      "metadata": {
+        "inference_type": "explicit",
+        "source_text": "系统去搜索相关的资料"
+      }
+    },
+    {
+      "node_id": "node_thinking_001",
+      "node_name": "整理搜索结果",
+      "node_type": "thinking_node",
+      "node_subtype": "summarization",
+      "description": "对搜索结果进行去重、排序、分类和摘要生成，提取关键信息",
+      "input_schema": {
+        "fields": [
+          {
+            "name": "search_results",
+            "type": "array",
+            "required": true,
+            "description": "原始搜索结果"
+          }
+        ]
+      },
+      "output_schema": {
+        "fields": [
+          {
+            "name": "organized_results",
+            "type": "object",
+            "required": true,
+            "description": "整理后的结果，包含分类、摘要、关键点"
+          }
+        ]
+      },
+      "config": {
+        "prompt_template": "请对以下搜索结果进行整理：\n1. 去除重复内容\n2. 按相关性排序\n3. 提取关键信息并分类\n4. 生成简洁摘要\n\n搜索结果：{search_results}\n\n请以JSON格式返回整理结果。",
+        "model": "default",
+        "temperature": 0.3,
+        "max_tokens": 2000
+      },
+      "metadata": {
+        "inference_type": "explicit",
+        "source_text": "把结果整理一下"
+      }
+    },
+    {
+      "node_id": "node_thinking_002",
+      "node_name": "生成报告大纲",
+      "node_type": "thinking_node",
+      "node_subtype": "generation",
+      "description": "基于整理后的搜索结果，使用AI生成结构化的报告大纲",
+      "input_schema": {
+        "fields": [
+          {
+            "name": "topic",
+            "type": "string",
+            "required": true,
+            "description": "报告主题"
+          },
+          {
+            "name": "organized_results",
+            "type": "object",
+            "required": true,
+            "description": "整理后的搜索结果"
+          }
+        ]
+      },
+      "output_schema": {
+        "fields": [
+          {
+            "name": "outline",
+            "type": "object",
+            "required": true,
+            "description": "报告大纲，包含章节结构和各章节要点"
+          }
+        ]
+      },
+      "config": {
+        "prompt_template": "请基于以下信息生成一个详细的报告大纲：\n\n主题：{topic}\n\n参考资料：{organized_results}\n\n要求：\n1. 大纲应包含3-7个主要章节\n2. 每个章节下有2-5个关键要点\n3. 结构清晰，逻辑连贯\n4. 突出重点和核心观点\n\n请以JSON格式返回大纲结构。",
+        "model": "default",
+        "temperature": 0.5,
+        "max_tokens": 1500
+      },
+      "metadata": {
+        "inference_type": "explicit",
+        "source_text": "让AI分析生成一个报告大纲"
+      }
+    },
+    {
+      "node_id": "node_control_002",
+      "node_name": "用户确认审核",
+      "node_type": "control_node",
+      "node_subtype": "human_approval",
+      "description": "等待用户审核生成的报告大纲，用户可以选择批准、拒绝并提供修改意见",
+      "input_schema": {
+        "fields": [
+          {
+            "name": "outline",
+            "type": "object",
+            "required": true,
+            "description": "待审核的报告大纲"
+          },
+          {
+            "name": "retry_count",
+            "type": "integer",
+            "required": true,
+            "description": "当前重试次数"
+          }
+        ]
+      },
+      "output_schema": {
+        "fields": [
+          {
+            "name": "user_approval",
+            "type": "boolean",
+            "required": true,
+            "description": "用户是否批准大纲"
+          },
+          {
+            "name": "retry_count",
+            "type": "integer",
+            "required": true,
+            "description": "更新后的重试次数"
+          },
+          {
+            "name": "feedback",
+            "type": "string",
+            "required": false,
+            "description": "用户提供的修改意见（如有）"
+          }
+        ]
+      },
+      "config": {
+        "approval_mode": "binary",
+        "max_retries": 3,
+        "allow_feedback": true,
+        "timeout": 600000
+      },
+      "metadata": {
+        "inference_type": "implicit",
+        "source_text": "如果用户觉得不满意"
+      }
+    },
+    {
+      "node_id": "node_thinking_003",
+      "node_name": "生成完整报告",
+      "node_type": "thinking_node",
+      "node_subtype": "generation",
+      "description": "根据用户确认的报告大纲，生成完整的报告内容",
+      "input_schema": {
+        "fields": [
+          {
+            "name": "topic",
+            "type": "string",
+            "required": true,
+            "description": "报告主题"
+          },
+          {
+            "name": "outline",
+            "type": "object",
+            "required": true,
+            "description": "确认后的报告大纲"
+          },
+          {
+            "name": "organized_results",
+            "type": "object",
+            "required": true,
+            "description": "整理后的参考资料"
+          }
+        ]
+      },
+      "output_schema": {
+        "fields": [
+          {
+            "name": "final_report",
+            "type": "string",
+            "required": true,
+            "description": "完整的报告内容（Markdown格式）"
+          }
+        ]
+      },
+      "config": {
+        "prompt_template": "请根据以下大纲和参考资料，生成一份完整的报告：\n\n主题：{topic}\n\n大纲：{outline}\n\n参考资料：{organized_results}\n\n要求：\n1. 严格按照大纲结构撰写\n2. 内容详实，论证充分\n3. 语言专业，逻辑清晰\n4. 使用Markdown格式\n5. 报告长度在2000-5000字之间",
+        "model": "default",
+        "temperature": 0.6,
+        "max_tokens": 8000
+      },
+      "metadata": {
+        "inference_type": "explicit",
+        "source_text": "根据大纲写完整的报告内容"
+      }
+    },
+    {
+      "node_id": "node_control_003",
+      "node_name": "输出结果",
+      "node_type": "control_node",
+      "node_subtype": "output_node",
+      "description": "格式化并输出最终的报告内容及相关元数据",
+      "input_schema": {
+        "fields": [
+          {
+            "name": "final_report",
+            "type": "string",
+            "required": true,
+            "description": "生成的报告内容"
+          },
+          {
+            "name": "outline",
+            "type": "object",
+            "required": true,
+            "description": "报告大纲"
+          },
+          {
+            "name": "topic",
+            "type": "string",
+            "required": true,
+            "description": "报告主题"
+          }
+        ]
+      },
+      "output_schema": {
+        "fields": [
+          {
+            "name": "result",
+            "type": "object",
+            "required": true,
+            "description": "包含报告、大纲、主题等完整信息的输出对象"
+          }
+        ]
+      },
+      "config": {
+        "output_format": "json",
+        "include_metadata": true,
+        "include_timestamp": true
+      },
+      "metadata": {
+        "inference_type": "implicit",
+        "source_text": "隐含的最终输出"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "edge_id": "edge_input_search",
+      "source": "node_control_001",
+      "target": "node_tool_001",
+      "edge_type": "sequential",
+      "config": {}
+    },
+    {
+      "edge_id": "edge_search_organize",
+      "source": "node_tool_001",
+      "target": "node_thinking_001",
+      "edge_type": "sequential",
+      "config": {}
+    },
+    {
+      "edge_id": "edge_organize_outline",
+      "source": "node_thinking_001",
+      "target": "node_thinking_002",
+      "edge_type": "sequential",
+      "config": {}
+    },
+    {
+      "edge_id": "edge_outline_approval",
+      "source": "node_thinking_002",
+      "target": "node_control_002",
+      "edge_type": "sequential",
+      "config": {}
+    },
+    {
+      "edge_id": "edge_approval_retry",
+      "source": "node_control_002",
+      "target": "node_thinking_002",
+      "edge_type": "conditional",
+      "condition": {
+        "expression": "!user_approval && retry_count < 3",
+        "description": "用户不满意且重试次数未达到上限"
+      },
+      "config": {
+        "increment_retry": true
+      }
+    },
+    {
+      "edge_id": "edge_approval_report",
+      "source": "node_control_002",
+      "target": "node_thinking_003",
+      "edge_type": "conditional",
+      "condition": {
+        "expression": "user_approval == true",
+        "description": "用户批准大纲"
+      },
+      "config": {}
+    },
+    {
+      "edge_id": "edge_report_output",
+      "source": "node_thinking_003",
+      "target": "node_control_003",
+      "edge_type": "sequential",
+      "config": {}
+    }
+  ],
+  "state_schema": {
+    "fields": [
+      {
+        "name": "topic",
+        "type": "string",
+        "required": true,
+        "description": "用户输入的报告主题",
+        "state_type": "input",
+        "initial_value": null
+      },
+      {
+        "name": "search_results",
+        "type": "array",
+        "required": false,
+        "description": "搜索获取的原始资料",
+        "state_type": "intermediate",
+        "initial_value": []
+      },
+      {
+        "name": "organized_results",
+        "type": "object",
+        "required": false,
+        "description": "整理后的搜索结果",
+        "state_type": "intermediate",
+        "initial_value": null
+      },
+      {
+        "name": "outline",
+        "type": "object",
+        "required": false,
+        "description": "生成的报告大纲",
+        "state_type": "intermediate",
+        "initial_value": null
+      },
+      {
+        "name": "user_approval",
+        "type": "boolean",
+        "required": false,
+        "description": "用户是否批准大纲",
+        "state_type": "control",
+        "initial_value": false
+      },
+      {
+        "name": "retry_count",
+        "type": "integer",
+        "required": true,
+        "description": "大纲重试次数",
+        "state_type": "control",
+        "initial_value": 0
+      },
+      {
+        "name": "final_report",
+        "type": "string",
+        "required": false,
+        "description": "最终生成的完整报告",
+        "state_type": "output",
+        "initial_value": null
+      }
+    ]
+  },
+  "entry_point": "node_control_001",
+  "finish_point": "node_control_003",
+  "config": {
+    "timeout": 600000,
+    "max_retries": 3,
+    "enable_checkpoint": true,
+    "enable_logging": true,
+    "log_level": "info",
+    "error_handling": {
+      "strategy": "continue_on_error",
+      "error_node": "node_control_003",
+      "log_errors": true
+    },
+    "execution_mode": "sequential",
+    "allow_parallel": false
+  }
+}

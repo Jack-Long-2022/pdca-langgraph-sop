@@ -45,12 +45,12 @@ class EdgeDefinition(BaseModel):
     source: str = Field(..., description="源节点ID")
     target: str = Field(..., description="目标节点ID")
     condition: Optional[str] = Field(default=None, description="条件表达式")
-    type: str = Field(default="sequential", description="边类型: sequential/conditional/parallel")
+    type: str = Field(default="sequential", description="边类型: sequential/conditional/parallel/error/loop")
 
     @field_validator('type')
     @classmethod
     def validate_edge_type(cls, v: str) -> str:
-        valid_types = {'sequential', 'conditional', 'parallel'}
+        valid_types = {'sequential', 'conditional', 'parallel', 'error', 'loop'}
         if v not in valid_types:
             raise ValueError(f"边类型必须是 {valid_types} 之一")
         return v

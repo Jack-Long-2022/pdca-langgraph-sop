@@ -112,20 +112,29 @@ class BaseLLM(ABC):
 
 
 class OpenAILLM(BaseLLM):
-    """OpenAI LLM封装"""
-    
-    def __init__(self, api_key: Optional[str] = None, **kwargs):
+    """OpenAI LLM封装（兼容OpenAI格式的API）"""
+
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
+        **kwargs
+    ):
         super().__init__(**kwargs)
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
+        self.base_url = base_url
         self._client = None
-    
+
     @property
     def client(self):
         """懒加载OpenAI客户端"""
         if self._client is None:
             try:
                 from openai import OpenAI
-                self._client = OpenAI(api_key=self.api_key, timeout=self.timeout)
+                client_kwargs = {"api_key": self.api_key, "timeout": self.timeout}
+                if self.base_url:
+                    client_kwargs["base_url"] = self.base_url
+                self._client = OpenAI(**client_kwargs)
             except ImportError:
                 raise ModelUnavailableError("请安装 openai 包: pip install openai")
         return self._client
@@ -245,26 +254,35 @@ def setup_llm(
     provider: str = "openai",
     model: str = "gpt-4",
     api_key: Optional[str] = None,
+    base_url: Optional[str] = None,
     **kwargs
 ) -> BaseLLM:
     """快速设置LLM
-    
+
     Args:
         name: LLM名称
-        provider: 提供商 (openai)
+        provider: 提供商 (openai, zhipu)
         model: 模型名称
         api_key: API密钥
+        base_url: API基础URL（用于兼容OpenAI格式的API）
         **kwargs: 其他参数
-    
+
     Returns:
         LLM实例
     """
     manager = get_llm_manager()
-    
-    if provider == "openai":
-        llm = OpenAILLM(model=model, api_key=api_key, **kwargs)
+
+    if provider == "zhipu":
+        llm = OpenAILLM(
+            model=model,
+            api_key=api_key or os.getenv("ZHIPU_API_KEY"),
+            base_url=base_url or os.getenv("ZHIPU_BASE_URL", "https://open.bigmodel.cn/api/paas/v4/"),
+            **kwargs,
+        )
+    elif provider == "openai":
+        llm = OpenAILLM(model=model, api_key=api_key, base_url=base_url, **kwargs)
     else:
         raise ValueError(f"不支持的LLM提供商: {provider}")
-    
+
     manager.register_llm(name, llm)
     return llm

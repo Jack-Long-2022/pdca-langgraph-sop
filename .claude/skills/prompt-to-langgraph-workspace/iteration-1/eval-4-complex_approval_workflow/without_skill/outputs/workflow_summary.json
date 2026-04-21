@@ -1,0 +1,121 @@
+{
+  "workflow_summary": {
+    "name": "complex_approval_workflow",
+    "description": "复杂审批工作流 - 从用户申请到管理员审核再到邮件通知的完整流程",
+    "complexity_level": "high",
+    "main_stages": [
+      "用户提交申请",
+      "系统验证",
+      "管理员审核",
+      "邮件通知",
+      "状态更新"
+    ],
+    "decision_points": [
+      {
+        "name": "验证检查",
+        "location": "系统验证后",
+        "options": ["通过", "失败"],
+        "outcomes": ["发送给管理员", "返回错误"]
+      },
+      {
+        "name": "管理员决策",
+        "location": "管理员审核后",
+        "options": ["批准", "拒绝", "需要更多信息"],
+        "outcomes": ["发送通知邮件", "结束流程", "请求补充信息"]
+      }
+    ],
+    "human_intervention_required": true,
+    "external_systems": ["邮件服务", "用户管理系统"],
+    "estimated_processing_time": "1-7天"
+  },
+  "flow_structure": {
+    "happy_path": [
+      "用户提交申请",
+      "系统验证通过",
+      "发送给管理员",
+      "管理员批准",
+      "发送通知邮件",
+      "更新状态",
+      "结束"
+    ],
+    "exception_paths": [
+      {
+        "scenario": "验证失败",
+        "path": ["系统验证失败", "返回错误信息", "结束"]
+      },
+      {
+        "scenario": "管理员拒绝",
+        "path": ["管理员拒绝", "通知拒绝原因", "结束"]
+      },
+      {
+        "scenario": "需要更多信息",
+        "path": ["管理员请求信息", "通知用户", "返回申请提交", "重新提交"]
+      },
+      {
+        "scenario": "邮件发送失败",
+        "path": ["邮件失败", "重试或备用通知", "继续更新状态"]
+      }
+    ]
+  },
+  "key_features": [
+    "多条件分支决策",
+    "人工审核节点",
+    "自动邮件通知",
+    "错误处理和重试机制",
+    "状态跟踪和历史记录",
+    "优先级路由",
+    "超时和升级机制"
+  ],
+  "integration_points": [
+    {
+      "system": "邮件服务",
+      "purpose": "发送批准通知和错误提醒",
+      "protocol": "SMTP"
+    },
+    {
+      "system": "用户管理",
+      "purpose": "验证用户权限和获取管理员信息",
+      "protocol": "REST API"
+    },
+    {
+      "system": "仪表板",
+      "purpose": "显示待审核任务和状态",
+      "protocol": "WebSocket"
+    }
+  ],
+  "state_management": {
+    "initial_state": {
+      "application": null,
+      "validation_passed": false,
+      "admin_decision": null,
+      "final_status": "pending"
+    },
+    "final_states": [
+      "approved",  // 批准
+      "rejected",  // 拒绝
+      "error"      // 错误
+    ],
+    "intermediate_states": [
+      "pending_validation",    // 等待验证
+      "pending_approval",      // 等待审核
+      "info_requested"         // 需要更多信息
+    ]
+  },
+  "configuration_highlights": {
+    "validation_rules": {
+      "user_permissions": "检查用户权限",
+      "data_completeness": "检查数据完整性",
+      "business_rules": "检查业务规则"
+    },
+    "approval_workflow": {
+      "admin_roles": ["admin", "manager"],
+      "review_options": ["approve", "reject", "request_info"],
+      "require_comment_on_reject": true
+    },
+    "notification_settings": {
+      "channels": ["email", "dashboard"],
+      "templates": "approval_notification",
+      "retry_on_failure": true
+    }
+  }
+}

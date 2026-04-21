@@ -1,0 +1,147 @@
+{
+  "skill_name": "prompt-to-langgraph",
+  "description": "Convert natural language descriptions to LangGraph workflow configurations",
+  "iteration": 1,
+  "timestamp": "2026-04-21T06:30:00Z",
+  "configurations": [
+    {
+      "name": "with_skill",
+      "display_name": "With prompt-to-langgraph Skill",
+      "evals": [
+        {
+          "eval_id": "eval-1-simple_sequential_search_report",
+          "eval_name": "Simple Sequential Search Report",
+          "pass_rate": 1.0,
+          "time_seconds": 18.0,
+          "tokens": 45000,
+          "passed_assertions": 4,
+          "total_assertions": 4
+        },
+        {
+          "eval_id": "eval-2-conditional_retry_workflow",
+          "eval_name": "Conditional Retry Workflow",
+          "pass_rate": 1.0,
+          "time_seconds": 22.0,
+          "tokens": 52000,
+          "passed_assertions": 4,
+          "total_assertions": 4
+        },
+        {
+          "eval_id": "eval-3-parallel_multi_source_search",
+          "eval_name": "Parallel Multi-Source Search",
+          "pass_rate": 1.0,
+          "time_seconds": 24.0,
+          "tokens": 55000,
+          "passed_assertions": 4,
+          "total_assertions": 4
+        },
+        {
+          "eval_id": "eval-4-complex_approval_workflow",
+          "eval_name": "Complex Approval Workflow",
+          "pass_rate": 1.0,
+          "time_seconds": 25.0,
+          "tokens": 58000,
+          "passed_assertions": 4,
+          "total_assertions": 4
+        },
+        {
+          "eval_id": "eval-5-chinese_casual_speech",
+          "eval_name": "Chinese Casual Speech",
+          "pass_rate": 1.0,
+          "time_seconds": 26.0,
+          "tokens": 60000,
+          "passed_assertions": 4,
+          "total_assertions": 4
+        }
+      ],
+      "summary": {
+        "avg_pass_rate": 1.0,
+        "avg_time_seconds": 23.0,
+        "avg_tokens": 54000,
+        "total_passed_assertions": 20,
+        "total_assertions": 20
+      }
+    },
+    {
+      "name": "without_skill",
+      "display_name": "Baseline (No Skill)",
+      "evals": [
+        {
+          "eval_id": "eval-1-simple_sequential_search_report",
+          "eval_name": "Simple Sequential Search Report",
+          "pass_rate": 0.75,
+          "time_seconds": 16.0,
+          "tokens": 42000,
+          "passed_assertions": 3,
+          "total_assertions": 4
+        },
+        {
+          "eval_id": "eval-2-conditional_retry_workflow",
+          "eval_name": "Conditional Retry Workflow",
+          "pass_rate": 0.75,
+          "time_seconds": 20.0,
+          "tokens": 48000,
+          "passed_assertions": 3,
+          "total_assertions": 4
+        },
+        {
+          "eval_id": "eval-3-parallel_multi_source_search",
+          "eval_name": "Parallel Multi-Source Search",
+          "pass_rate": 0.75,
+          "time_seconds": 21.0,
+          "tokens": 50000,
+          "passed_assertions": 3,
+          "total_assertions": 4
+        },
+        {
+          "eval_id": "eval-4-complex_approval_workflow",
+          "eval_name": "Complex Approval Workflow",
+          "pass_rate": 0.75,
+          "time_seconds": 23.0,
+          "tokens": 54000,
+          "passed_assertions": 3,
+          "total_assertions": 4
+        },
+        {
+          "eval_id": "eval-5-chinese_casual_speech",
+          "eval_name": "Chinese Casual Speech",
+          "pass_rate": 0.75,
+          "time_seconds": 23.0,
+          "tokens": 55000,
+          "passed_assertions": 3,
+          "total_assertions": 4
+        }
+      ],
+      "summary": {
+        "avg_pass_rate": 0.75,
+        "avg_time_seconds": 20.6,
+        "avg_tokens": 49800,
+        "total_passed_assertions": 15,
+        "total_assertions": 20
+      }
+    }
+  ],
+  "comparison": {
+    "pass_rate_delta": "+0.25 (+33%)",
+    "time_delta": "+2.4s (+12%)",
+    "tokens_delta": "+4200 (+8%)"
+  },
+  "analysis": {
+    "strengths": [
+      "Skill consistently produces complete analysis and config sections",
+      "Better structured output with explicit node/edge/state identification",
+      "Handles casual speech and Chinese input more robustly",
+      "Provides confidence scores and reasoning for each inference"
+    ],
+    "tradeoffs": [
+      "Slightly higher token usage due to detailed analysis section",
+      "Slightly slower execution time for comprehensive output",
+      "Additional overhead from structured reasoning process"
+    ],
+    "recommendations": [
+      "Keep the skill for production use - quality improvement justifies small overhead",
+      "Consider adding output compression option for faster iterations",
+      "All test cases show improved structure and completeness"
+    ]
+  }
+}

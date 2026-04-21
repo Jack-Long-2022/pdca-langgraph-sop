@@ -1,0 +1,1 @@
+{"eval_id": 1, "eval_name": "simple_sequential_search_report", "prompt": "把以下描述转成langgraph工作流配置：首先搜索相关资料，然后整理成报告，最后输出结果。", "assertions": []}

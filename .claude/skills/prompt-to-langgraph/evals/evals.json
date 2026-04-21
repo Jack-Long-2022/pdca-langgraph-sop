@@ -1,0 +1,71 @@
+{
+  "skill_name": "prompt-to-langgraph",
+  "description": "Convert natural language descriptions to LangGraph workflow configurations",
+  "evals": [
+    {
+      "id": 1,
+      "name": "simple_sequential_search_report",
+      "prompt": "把以下描述转成langgraph工作流配置：首先搜索相关资料，然后整理成报告，最后输出结果。",
+      "expected_output": "A valid LangGraph configuration with 3 nodes (资料搜索, 报告整理, 结果输出) connected sequentially, with proper state schemas",
+      "files": [],
+      "assertions": [
+        {"text": "Output contains valid JSON with 'analysis' and 'config' sections", "type": "structure"},
+        {"text": "Config has at least 3 nodes: input/search, organize/analysis, output", "type": "node_count"},
+        {"text": "Edges are sequential type connecting nodes in order", "type": "edge_type"},
+        {"text": "State schema includes input, intermediate, and output states", "type": "state_types"}
+      ]
+    },
+    {
+      "id": 2,
+      "name": "conditional_retry_workflow",
+      "prompt": "我需要自动化这个流程：先搜索数据，如果搜索成功就分析结果，如果失败就重试最多3次。分析完成后生成报告。",
+      "expected_output": "A configuration with search node, condition node for success/failure, loop mechanism for retry (max 3 times), analysis node, and report generation node",
+      "files": [],
+      "assertions": [
+        {"text": "Contains conditional node with success/failure branches", "type": "conditional_logic"},
+        {"text": "Retry mechanism configured with max_retries = 3", "type": "retry_config"},
+        {"text": "Has control state for retry_count", "type": "control_state"},
+        {"text": "Loop edge back to search node on failure", "type": "loop_structure"}
+      ]
+    },
+    {
+      "id": 3,
+      "name": "parallel_multi_source_search",
+      "prompt": "帮我设计一个工作流：同时从网页、数据库和文档库三个来源搜索资料，然后把结果合并，最后生成摘要。",
+      "expected_output": "A configuration with parallel search nodes (web, database, document), a merge node to combine results, and a summary generation node",
+      "files": [],
+      "assertions": [
+        {"text": "Has 3 parallel search nodes (web, database, document)", "type": "parallel_nodes"},
+        {"text": "Contains merge node to combine parallel results", "type": "merge_node"},
+        {"text": "Edges use parallel type for concurrent execution", "type": "parallel_edges"},
+        {"text": "Summary generation node after merge", "type": "post_merge_processing"}
+      ]
+    },
+    {
+      "id": 4,
+      "name": "complex_approval_workflow",
+      "prompt": "把这个任务步骤变成配置文件：用户提交申请 → 系统验证 → 如果验证失败返回错误 → 如果验证通过则发送给管理员审核 → 管理员批准则通过，拒绝则结束 → 通过后发送通知邮件",
+      "expected_output": "A complete workflow with input validation, conditional branches for success/failure, human approval node, and email notification",
+      "files": [],
+      "assertions": [
+        {"text": "Contains human_approval node for admin review", "type": "human_approval"},
+        {"text": "Has validation node with success/failure branches", "type": "validation_logic"},
+        {"text": "Email notification node after approval", "type": "email_notification"},
+        {"text": "Multiple conditional branches for different outcomes", "type": "branch_coverage"}
+      ]
+    },
+    {
+      "id": 5,
+      "name": "chinese_casual_speech",
+      "prompt": "那个，我想做一个自动写报告的流程。首先呢，用户输入一个主题，然后系统去搜索相关的资料，搜完之后呢，把结果整理一下，然后让AI分析生成一个报告大纲。大纲生成之后，如果用户觉得不满意，可以让AI重新生成，最多重试3次。大纲确定后，再根据大纲写完整的报告内容。",
+      "expected_output": "A workflow handling casual Chinese speech with proper node identification, including human approval for outline review, retry logic (max 3), and content generation",
+      "files": [],
+      "assertions": [
+        {"text": "Analysis section identifies filler words removal", "type": "preprocessing"},
+        {"text": "Outline review has human approval node", "type": "human_interaction"},
+        {"text": "Retry loop with max 3 attempts for outline regeneration", "type": "retry_logic"},
+        {"text": "Final content generation node after approval", "type": "final_generation"}
+      ]
+    }
+  ]
+}

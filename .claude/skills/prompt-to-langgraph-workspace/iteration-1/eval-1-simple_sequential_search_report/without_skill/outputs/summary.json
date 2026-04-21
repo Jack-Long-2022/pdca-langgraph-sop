@@ -1,0 +1,90 @@
+{
+  "task_description": "把以下描述转成langgraph工作流配置：首先搜索相关资料，然后整理成报告，最后输出结果。",
+  "workflow_summary": {
+    "name": "simple_sequential_search_report",
+    "type": "sequential",
+    "complexity": "simple"
+  },
+  "nodes_summary": {
+    "total_count": 5,
+    "node_types": {
+      "start": 1,
+      "action": 3,
+      "end": 1
+    },
+    "nodes": [
+      {
+        "id": "start",
+        "type": "start",
+        "name": "开始"
+      },
+      {
+        "id": "search_materials",
+        "type": "action",
+        "action_type": "search",
+        "name": "搜索相关资料"
+      },
+      {
+        "id": "organize_report",
+        "type": "action",
+        "action_type": "organize",
+        "name": "整理成报告"
+      },
+      {
+        "id": "output_results",
+        "type": "action",
+        "action_type": "output",
+        "name": "输出结果"
+      },
+      {
+        "id": "end",
+        "type": "end",
+        "name": "结束"
+      }
+    ]
+  },
+  "edges_summary": {
+    "total_count": 4,
+    "edge_types": {
+      "unconditional": 4,
+      "conditional": 0
+    },
+    "flow": [
+      "start → search_materials",
+      "search_materials → organize_report",
+      "organize_report → output_results",
+      "output_results → end"
+    ]
+  },
+  "states_summary": {
+    "total_count": 7,
+    "state_types": {
+      "string": 2,
+      "array": 2,
+      "object": 3
+    },
+    "key_states": [
+      "search_query",
+      "search_results",
+      "organized_content",
+      "final_output",
+      "execution_status",
+      "errors",
+      "metadata"
+    ]
+  },
+  "key_features": {
+    "linear_execution": true,
+    "data_flow": "sequential",
+    "state_management": true,
+    "error_handling": "basic",
+    "conditional_logic": false,
+    "parallel_processing": false,
+    "retry_mechanism": false
+  },
+  "output_files": [
+    "workflow_config.json",
+    "analysis_report.md",
+    "summary.json"
+  ]
+}

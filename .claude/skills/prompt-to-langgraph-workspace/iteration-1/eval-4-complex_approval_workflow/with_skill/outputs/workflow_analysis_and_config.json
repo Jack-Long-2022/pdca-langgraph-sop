@@ -1,0 +1,773 @@
+{
+  "analysis": {
+    "input_summary": "用户描述了一个完整的审批工作流：从用户提交申请开始，经过系统验证，验证失败则返回错误，验证通过则发送给管理员审核，管理员批准则通过并发送通知邮件，拒绝则结束流程。",
+    "identified_nodes": [
+      {
+        "node_name": "用户提交申请",
+        "source_text": "用户提交申请",
+        "inference_type": "explicit",
+        "confidence": 0.98,
+        "reasoning": "显式描述的起始节点，用户主动提交申请的步骤"
+      },
+      {
+        "node_name": "系统验证",
+        "source_text": "系统验证",
+        "inference_type": "explicit",
+        "confidence": 0.99,
+        "reasoning": "显式描述的系统验证步骤"
+      },
+      {
+        "node_name": "返回错误",
+        "source_text": "如果验证失败返回错误",
+        "inference_type": "explicit",
+        "confidence": 0.95,
+        "reasoning": "显式描述的错误处理分支"
+      },
+      {
+        "node_name": "发送给管理员审核",
+        "source_text": "如果验证通过则发送给管理员审核",
+        "inference_type": "explicit",
+        "confidence": 0.97,
+        "reasoning": "显式描述的审核流程步骤"
+      },
+      {
+        "node_name": "管理员审核决策",
+        "source_text": "管理员批准则通过，拒绝则结束",
+        "inference_type": "explicit",
+        "confidence": 0.96,
+        "reasoning": "显式描述的决策节点，包含批准和拒绝两个分支"
+      },
+      {
+        "node_name": "发送通知邮件",
+        "source_text": "通过后发送通知邮件",
+        "inference_type": "explicit",
+        "confidence": 0.98,
+        "reasoning": "显式描述的邮件通知步骤"
+      },
+      {
+        "node_name": "输入准备节点",
+        "source_text": "隐含：工作流入口",
+        "inference_type": "implicit",
+        "confidence": 0.90,
+        "reasoning": "任何工作流都需要明确的入口节点来接收和初始化输入"
+      },
+      {
+        "node_name": "流程结束节点",
+        "source_text": "隐含：工作流出口",
+        "inference_type": "implicit",
+        "confidence": 0.90,
+        "reasoning": "工作流需要统一的结束节点来处理最终输出"
+      }
+    ],
+    "identified_edges": [
+      {
+        "edge_type": "sequential",
+        "source_text": "用户提交申请 → 系统验证",
+        "source_node": "node_control_001",
+        "target_node": "node_tool_001",
+        "confidence": 0.99,
+        "reasoning": "明确顺序关系：提交后立即进行验证"
+      },
+      {
+        "edge_type": "conditional",
+        "source_text": "如果验证失败返回错误",
+        "source_node": "node_tool_001",
+        "target_node": "node_control_003",
+        "confidence": 0.97,
+        "reasoning": "条件分支：验证失败时的处理路径"
+      },
+      {
+        "edge_type": "conditional",
+        "source_text": "如果验证通过则发送给管理员审核",
+        "source_node": "node_tool_001",
+        "target_node": "node_tool_002",
+        "confidence": 0.97,
+        "reasoning": "条件分支：验证通过时的处理路径"
+      },
+      {
+        "edge_type": "sequential",
+        "source_text": "发送给管理员审核 → 管理员批准/拒绝",
+        "source_node": "node_tool_002",
+        "target_node": "node_control_002",
+        "confidence": 0.96,
+        "reasoning": "顺序关系：发送审核后等待管理员决策"
+      },
+      {
+        "edge_type": "conditional",
+        "source_text": "管理员批准则通过",
+        "source_node": "node_control_002",
+        "target_node": "node_tool_003",
+        "confidence": 0.95,
+        "reasoning": "条件分支：批准时发送通知邮件"
+      },
+      {
+        "edge_type": "conditional",
+        "source_text": "拒绝则结束",
+        "source_node": "node_control_002",
+        "target_node": "node_control_004",
+        "confidence": 0.95,
+        "reasoning": "条件分支：拒绝时直接结束流程"
+      },
+      {
+        "edge_type": "sequential",
+        "source_text": "通过后发送通知邮件 → 流程结束",
+        "source_node": "node_tool_003",
+        "target_node": "node_control_004",
+        "confidence": 0.94,
+        "reasoning": "顺序关系：发送邮件后完成整个流程"
+      }
+    ],
+    "identified_states": [
+      {
+        "field_name": "application_data",
+        "state_type": "input",
+        "source_text": "用户提交申请",
+        "confidence": 0.95,
+        "reasoning": "用户提交的申请数据，作为整个工作流的输入"
+      },
+      {
+        "field_name": "validation_result",
+        "state_type": "control",
+        "source_text": "系统验证 → 验证通过/失败",
+        "confidence": 0.96,
+        "reasoning": "验证结果决定后续流程走向"
+      },
+      {
+        "field_name": "error_message",
+        "state_type": "intermediate",
+        "source_text": "返回错误",
+        "confidence": 0.90,
+        "reasoning": "验证失败时需要传递的错误信息"
+      },
+      {
+        "field_name": "approval_request",
+        "state_type": "intermediate",
+        "source_text": "发送给管理员审核",
+        "confidence": 0.92,
+        "reasoning": "发送给管理员的审核请求对象"
+      },
+      {
+        "field_name": "approval_decision",
+        "state_type": "control",
+        "source_text": "管理员批准则通过，拒绝则结束",
+        "confidence": 0.97,
+        "reasoning": "管理员的批准/拒绝决策，控制最终流程走向"
+      },
+      {
+        "field_name": "notification_email",
+        "state_type": "intermediate",
+        "source_text": "发送通知邮件",
+        "confidence": 0.91,
+        "reasoning": "通知邮件的内容和收件人信息"
+      },
+      {
+        "field_name": "workflow_result",
+        "state_type": "output",
+        "source_text": "流程结束",
+        "confidence": 0.93,
+        "reasoning": "工作流的最终输出结果（通过或拒绝）"
+      }
+    ],
+    "inferences": [
+      {
+        "inference_type": "隐含节点",
+        "content": "添加输入准备节点（input_node）作为工作流入口",
+        "reasoning": "标准工作流模式需要明确的入口点来接收和验证用户输入",
+        "confidence": 0.90
+      },
+      {
+        "inference_type": "隐含节点",
+        "content": "添加流程结束节点（output_node）作为工作流出口",
+        "reasoning": "需要统一的工作流结束点来处理最终结果输出",
+        "confidence": 0.90
+      },
+      {
+        "inference_type": "条件补全",
+        "content": "管理员审核决策节点需要明确批准和拒绝两个分支",
+        "reasoning": "文本明确说明'批准则通过，拒绝则结束'，需要完整的条件分支",
+        "confidence": 0.95
+      },
+      {
+        "inference_type": "状态推断",
+        "content": "推断需要跟踪申请状态（pending/approved/rejected）",
+        "reasoning": "审批工作流需要状态机来跟踪当前申请所处的阶段",
+        "confidence": 0.92
+      }
+    ],
+    "ambiguities": [],
+    "assumptions": [
+      {
+        "assumption": "系统验证包括必填字段检查、格式验证、业务规则验证",
+        "reason": "典型的审批系统验证逻辑",
+        "impact": "如果验证规则不同，需要调整验证节点的配置"
+      },
+      {
+        "assumption": "管理员审核是人工操作，需要等待管理员响应",
+        "reason": "审批工作流通常需要人工介入",
+        "impact": "如果使用自动审批，需要移除人工交互节点"
+      },
+      {
+        "assumption": "通知邮件发送给申请人和相关利益方",
+        "reason": "标准通知流程",
+        "impact": "如果只需要通知特定角色，需要调整邮件收件人配置"
+      },
+      {
+        "assumption": "验证失败后流程可以重新开始",
+        "reason": "用户友好的错误处理",
+        "impact": "如果验证失败后直接终止，需要调整错误处理逻辑"
+      }
+    ]
+  },
+  "config": {
+    "workflow_id": "wf_approval_001",
+    "workflow_name": "审批工作流",
+    "description": "完整的审批流程：用户提交申请 → 系统验证 → 验证失败返回错误/验证通过发送管理员审核 → 管理员批准通过并发送通知邮件/拒绝结束",
+    "version": "1.0.0",
+    "metadata": {
+      "author": "AI Assistant",
+      "created_at": "2026-04-21T00:00:00Z",
+      "source_input": "用户提交申请 → 系统验证 → 如果验证失败返回错误 → 如果验证通过则发送给管理员审核 → 管理员批准则通过，拒绝则结束 → 通过后发送通知邮件"
+    },
+    "nodes": [
+      {
+        "node_id": "node_control_001",
+        "node_name": "输入准备",
+        "node_type": "control_node",
+        "node_subtype": "input_node",
+        "description": "接收并预处理用户提交的申请数据，验证基本格式和完整性",
+        "input_schema": {
+          "fields": [
+            {
+              "name": "application_data",
+              "type": "object",
+              "required": true,
+              "description": "用户提交的申请数据"
+            }
+          ]
+        },
+        "output_schema": {
+          "fields": [
+            {
+              "name": "processed_application",
+              "type": "object",
+              "required": true,
+              "description": "预处理后的申请数据"
+            },
+            {
+              "name": "application_id",
+              "type": "string",
+              "required": true,
+              "description": "申请唯一标识符"
+            }
+          ]
+        },
+        "config": {
+          "validation_rules": [
+            "required_fields_check",
+            "data_type_check",
+            "basic_format_check"
+          ]
+        },
+        "metadata": {
+          "inference_type": "implicit"
+        }
+      },
+      {
+        "node_id": "node_tool_001",
+        "node_name": "系统验证",
+        "node_type": "tool_node",
+        "node_subtype": "validation",
+        "description": "对申请数据进行完整性和业务规则验证，包括必填字段、数据格式、业务约束等检查",
+        "input_schema": {
+          "fields": [
+            {
+              "name": "processed_application",
+              "type": "object",
+              "required": true,
+              "description": "预处理后的申请数据"
+            },
+            {
+              "name": "application_id",
+              "type": "string",
+              "required": true,
+              "description": "申请唯一标识符"
+            }
+          ]
+        },
+        "output_schema": {
+          "fields": [
+            {
+              "name": "validation_result",
+              "type": "boolean",
+              "required": true,
+              "description": "验证结果：true表示通过，false表示失败"
+            },
+            {
+              "name": "validation_details",
+              "type": "object",
+              "required": false,
+              "description": "验证详细信息，包含失败原因"
+            }
+          ]
+        },
+        "config": {
+          "validation_rules": [
+            "required_fields_validation",
+            "format_validation",
+            "business_rule_validation",
+            "duplicate_check",
+            "eligibility_check"
+          ],
+          "on_failure": "return_error"
+        },
+        "metadata": {
+          "inference_type": "explicit",
+          "source_text": "系统验证"
+        }
+      },
+      {
+        "node_id": "node_control_003",
+        "node_name": "返回错误",
+        "node_type": "control_node",
+        "node_subtype": "error_handler",
+        "description": "处理验证失败情况，返回详细错误信息给用户，允许修正后重新提交",
+        "input_schema": {
+          "fields": [
+            {
+              "name": "validation_details",
+              "type": "object",
+              "required": true,
+              "description": "验证失败详细信息"
+            },
+            {
+              "name": "application_id",
+              "type": "string",
+              "required": true,
+              "description": "申请唯一标识符"
+            }
+          ]
+        },
+        "output_schema": {
+          "fields": [
+            {
+              "name": "error_response",
+              "type": "object",
+              "required": true,
+              "description": "格式化的错误响应信息"
+            },
+            {
+              "name": "retry_allowed",
+              "type": "boolean",
+              "required": true,
+              "description": "是否允许重新提交"
+            }
+          ]
+        },
+        "config": {
+          "error_format": "user_friendly",
+          "include_correction_suggestions": true,
+          "allow_retry": true
+        },
+        "metadata": {
+          "inference_type": "explicit",
+          "source_text": "如果验证失败返回错误"
+        }
+      },
+      {
+        "node_id": "node_tool_002",
+        "node_name": "发送管理员审核",
+        "node_type": "tool_node",
+        "node_subtype": "notification",
+        "description": "将验证通过的申请发送给管理员进行审核，包括创建审核任务和通知管理员",
+        "input_schema": {
+          "fields": [
+            {
+              "name": "processed_application",
+              "type": "object",
+              "required": true,
+              "description": "预处理后的申请数据"
+            },
+            {
+              "name": "application_id",
+              "type": "string",
+              "required": true,
+              "description": "申请唯一标识符"
+            }
+          ]
+        },
+        "output_schema": {
+          "fields": [
+            {
+              "name": "approval_request_id",
+              "type": "string",
+              "required": true,
+              "description": "审核请求唯一标识符"
+            },
+            {
+              "name": "assigned_admin",
+              "type": "string",
+              "required": true,
+              "description": "分配的管理员标识"
+            },
+            {
+              "name": "request_status",
+              "type": "string",
+              "required": true,
+              "description": "审核请求状态：pending"
+            }
+          ]
+        },
+        "config": {
+          "admin_assignment_strategy": "round_robin",
+          "notification_method": ["email", "system_notification"],
+          "escalation_timeout": 86400
+        },
+        "metadata": {
+          "inference_type": "explicit",
+          "source_text": "如果验证通过则发送给管理员审核"
+        }
+      },
+      {
+        "node_id": "node_control_002",
+        "node_name": "管理员审核决策",
+        "node_type": "control_node",
+        "node_subtype": "human_approval",
+        "description": "等待管理员对申请进行审核，收集管理员的批准或拒绝决策及意见",
+        "input_schema": {
+          "fields": [
+            {
+              "name": "approval_request_id",
+              "type": "string",
+              "required": true,
+              "description": "审核请求唯一标识符"
+            },
+            {
+              "name": "application_id",
+              "type": "string",
+              "required": true,
+              "description": "申请唯一标识符"
+            }
+          ]
+        },
+        "output_schema": {
+          "fields": [
+            {
+              "name": "approval_decision",
+              "type": "boolean",
+              "required": true,
+              "description": "管理员决策：true表示批准，false表示拒绝"
+            },
+            {
+              "name": "admin_comment",
+              "type": "string",
+              "required": false,
+              "description": "管理员审核意见"
+            },
+            {
+              "name": "decision_timestamp",
+              "type": "string",
+              "required": true,
+              "description": "决策时间戳"
+            }
+          ]
+        },
+        "config": {
+          "approval_interface": "web_console",
+          "require_comment_on_rejection": true,
+          "timeout_action": "escalate"
+        },
+        "metadata": {
+          "inference_type": "explicit",
+          "source_text": "管理员批准则通过，拒绝则结束"
+        }
+      },
+      {
+        "node_id": "node_tool_003",
+        "node_name": "发送通知邮件",
+        "node_type": "tool_node",
+        "node_subtype": "email",
+        "description": "向申请人发送审批通过的通知邮件，包含申请详情和后续步骤说明",
+        "input_schema": {
+          "fields": [
+            {
+              "name": "application_id",
+              "type": "string",
+              "required": true,
+              "description": "申请唯一标识符"
+            },
+            {
+              "name": "approval_decision",
+              "type": "boolean",
+              "required": true,
+              "description": "审批决策结果"
+            },
+            {
+              "name": "admin_comment",
+              "type": "string",
+              "required": false,
+              "description": "管理员审批意见"
+            }
+          ]
+        },
+        "output_schema": {
+          "fields": [
+            {
+              "name": "email_sent",
+              "type": "boolean",
+              "required": true,
+              "description": "邮件发送状态"
+            },
+            {
+              "name": "email_id",
+              "type": "string",
+              "required": false,
+              "description": "邮件唯一标识符"
+            },
+            {
+              "name": "recipients",
+              "type": "array",
+              "required": true,
+              "description": "邮件收件人列表"
+            }
+          ]
+        },
+        "config": {
+          "email_template": "approval_notification",
+          "include_application_details": true,
+          "cc_admins": true,
+          "retry_on_failure": true
+        },
+        "metadata": {
+          "inference_type": "explicit",
+          "source_text": "通过后发送通知邮件"
+        }
+      },
+      {
+        "node_id": "node_control_004",
+        "node_name": "流程结束",
+        "node_type": "control_node",
+        "node_subtype": "output_node",
+        "description": "处理工作流的最终输出，包括状态更新、日志记录和结果返回",
+        "input_schema": {
+          "fields": [
+            {
+              "name": "application_id",
+              "type": "string",
+              "required": true,
+              "description": "申请唯一标识符"
+            },
+            {
+              "name": "final_status",
+              "type": "string",
+              "required": true,
+              "description": "最终状态：approved/rejected/error"
+            },
+            {
+              "name": "email_sent",
+              "type": "boolean",
+              "required": false,
+              "description": "是否已发送通知邮件"
+            },
+            {
+              "name": "error_response",
+              "type": "object",
+              "required": false,
+              "description": "错误响应信息（验证失败时）"
+            }
+          ]
+        },
+        "output_schema": {
+          "fields": [
+            {
+              "name": "workflow_result",
+              "type": "object",
+              "required": true,
+              "description": "工作流最终结果"
+            },
+            {
+              "name": "status_code",
+              "type": "string",
+              "required": true,
+              "description": "状态码"
+            }
+          ]
+        },
+        "config": {
+          "update_application_status": true,
+          "log_workflow_completion": true,
+          "archive_workflow_data": true
+        },
+        "metadata": {
+          "inference_type": "implicit"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "edge_id": "edge_001_input_to_validation",
+        "source": "node_control_001",
+        "target": "node_tool_001",
+        "edge_type": "sequential",
+        "condition": null,
+        "metadata": {
+          "source_text": "用户提交申请 → 系统验证"
+        }
+      },
+      {
+        "edge_id": "edge_002_validation_to_error",
+        "source": "node_tool_001",
+        "target": "node_control_003",
+        "edge_type": "conditional",
+        "condition": "{validation_result} == false",
+        "metadata": {
+          "source_text": "如果验证失败返回错误"
+        }
+      },
+      {
+        "edge_id": "edge_003_error_to_end",
+        "source": "node_control_003",
+        "target": "node_control_004",
+        "edge_type": "sequential",
+        "condition": null,
+        "metadata": {
+          "note": "验证失败后返回错误信息并结束流程"
+        }
+      },
+      {
+        "edge_id": "edge_004_validation_to_approval",
+        "source": "node_tool_001",
+        "target": "node_tool_002",
+        "edge_type": "conditional",
+        "condition": "{validation_result} == true",
+        "metadata": {
+          "source_text": "如果验证通过则发送给管理员审核"
+        }
+      },
+      {
+        "edge_id": "edge_005_approval_to_decision",
+        "source": "node_tool_002",
+        "target": "node_control_002",
+        "edge_type": "sequential",
+        "condition": null,
+        "metadata": {
+          "source_text": "发送给管理员审核 → 管理员批准/拒绝"
+        }
+      },
+      {
+        "edge_id": "edge_006_decision_to_email",
+        "source": "node_control_002",
+        "target": "node_tool_003",
+        "edge_type": "conditional",
+        "condition": "{approval_decision} == true",
+        "metadata": {
+          "source_text": "管理员批准则通过"
+        }
+      },
+      {
+        "edge_id": "edge_007_decision_to_end",
+        "source": "node_control_002",
+        "target": "node_control_004",
+        "edge_type": "conditional",
+        "condition": "{approval_decision} == false",
+        "metadata": {
+          "source_text": "拒绝则结束"
+        }
+      },
+      {
+        "edge_id": "edge_008_email_to_end",
+        "source": "node_tool_003",
+        "target": "node_control_004",
+        "edge_type": "sequential",
+        "condition": null,
+        "metadata": {
+          "source_text": "通过后发送通知邮件 → 流程结束"
+        }
+      }
+    ],
+    "state_schema": {
+      "fields": [
+        {
+          "name": "application_data",
+          "type": "object",
+          "required": true,
+          "description": "用户提交的原始申请数据",
+          "state_type": "input"
+        },
+        {
+          "name": "application_id",
+          "type": "string",
+          "required": true,
+          "description": "申请唯一标识符",
+          "state_type": "intermediate"
+        },
+        {
+          "name": "validation_result",
+          "type": "boolean",
+          "required": true,
+          "description": "系统验证结果",
+          "state_type": "control"
+        },
+        {
+          "name": "validation_details",
+          "type": "object",
+          "required": false,
+          "description": "验证详细信息",
+          "state_type": "intermediate"
+        },
+        {
+          "name": "approval_request_id",
+          "type": "string",
+          "required": false,
+          "description": "审核请求唯一标识符",
+          "state_type": "intermediate"
+        },
+        {
+          "name": "approval_decision",
+          "type": "boolean",
+          "required": false,
+          "description": "管理员审批决策",
+          "state_type": "control"
+        },
+        {
+          "name": "admin_comment",
+          "type": "string",
+          "required": false,
+          "description": "管理员审批意见",
+          "state_type": "intermediate"
+        },
+        {
+          "name": "email_sent",
+          "type": "boolean",
+          "required": false,
+          "description": "通知邮件发送状态",
+          "state_type": "intermediate"
+        },
+        {
+          "name": "final_status",
+          "type": "string",
+          "required": true,
+          "description": "工作流最终状态：approved/rejected/failed",
+          "state_type": "output"
+        },
+        {
+          "name": "workflow_result",
+          "type": "object",
+          "required": true,
+          "description": "工作流执行结果",
+          "state_type": "output"
+        }
+      ]
+    },
+    "entry_point": "node_control_001",
+    "finish_point": "node_control_004",
+    "config": {
+      "timeout": 86400000,
+      "max_retries": 3,
+      "enable_checkpoint": true,
+      "enable_logging": true,
+      "log_level": "info",
+      "error_handling_strategy": "continue_on_error",
+      "human_approval_timeout": 86400
+    }
+  }
+}

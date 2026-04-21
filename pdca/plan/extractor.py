@@ -3,8 +3,10 @@
 从用户描述文本中抽取节点、边和状态信息
 """
 
+import json
 import re
 import uuid
+from pathlib import Path
 from typing import Any, Optional
 from pydantic import BaseModel, Field
 from pdca.core.logger import get_logger
@@ -436,31 +438,198 @@ class StateExtractor:
         return states
 
 
+# ============== JSON 加载器 ==============
+
+# SKILL.md node_type → ExtractedNode.type 映射
+_NODE_TYPE_MAP: dict[str, str] = {
+    "tool_node": "tool",
+    "thinking_node": "thought",
+    "control_node": "control",
+}
+
+# SKILL.md edge_type → ExtractedEdge.type 映射
+_EDGE_TYPE_MAP: dict[str, str] = {
+    "sequential": "sequential",
+    "conditional": "conditional",
+    "parallel": "parallel",
+    "loop": "loop",
+    "error": "error",
+}
+
+
+class JSONLoader:
+    """从 prompt-to-langgraph 技能输出的 JSON 文件加载结构化文档"""
+
+    def load(self, json_path: Path) -> StructuredDocument:
+        """加载 JSON 文件并转换为 StructuredDocument
+
+        Args:
+            json_path: JSON 文件路径
+
+        Returns:
+            结构化文档
+
+        Raises:
+            FileNotFoundError: 文件不存在
+            ValueError: JSON 格式不符合预期
+        """
+        logger.info("json_loader_start", path=str(json_path))
+
+        if not json_path.exists():
+            raise FileNotFoundError(f"JSON 文件不存在: {json_path}")
+
+        with open(json_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        config = data.get("config", {})
+        analysis = data.get("analysis", {})
+
+        if not config:
+            raise ValueError("JSON 缺少 config 顶层键")
+
+        nodes = self._map_nodes(config.get("nodes", []))
+        edges = self._map_edges(config.get("edges", []))
+        states = self._map_states(config.get("state_schema", {}).get("fields", []))
+        raw_text = config.get("metadata", {}).get("source_input", "")
+        missing_info = self._extract_missing_info(analysis.get("ambiguities", []))
+
+        document = StructuredDocument(
+            nodes=nodes,
+            edges=edges,
+            states=states,
+            raw_text=raw_text,
+            missing_info=missing_info,
+        )
+
+        logger.info(
+            "json_loader_complete",
+            node_count=len(nodes),
+            edge_count=len(edges),
+            state_count=len(states),
+        )
+        return document
+
+    def _map_nodes(self, raw_nodes: list[dict]) -> list[ExtractedNode]:
+        """映射 SKILL JSON 节点到 ExtractedNode"""
+        nodes = []
+        for raw in raw_nodes:
+            node_type = _NODE_TYPE_MAP.get(
+                raw.get("node_type", "tool_node"), "tool"
+            )
+            inputs = [
+                f["name"]
+                for f in raw.get("input_schema", {}).get("fields", [])
+                if "name" in f
+            ]
+            outputs = [
+                f["name"]
+                for f in raw.get("output_schema", {}).get("fields", [])
+                if "name" in f
+            ]
+            # 额外字段保留到 config
+            extra_keys = {
+                "node_subtype",
+                "metadata",
+                "input_schema",
+                "output_schema",
+            }
+            extra = {k: v for k, v in raw.items() if k in extra_keys}
+
+            nodes.append(
+                ExtractedNode(
+                    node_id=raw.get("node_id", f"node_{uuid.uuid4().hex[:8]}"),
+                    name=raw.get("node_name", "未命名节点"),
+                    type=node_type,
+                    description=raw.get("description"),
+                    inputs=inputs,
+                    outputs=outputs,
+                    config=extra,
+                )
+            )
+        return nodes
+
+    def _map_edges(self, raw_edges: list[dict]) -> list[ExtractedEdge]:
+        """映射 SKILL JSON 边到 ExtractedEdge"""
+        edges = []
+        for raw in raw_edges:
+            edge_type = _EDGE_TYPE_MAP.get(
+                raw.get("edge_type", "sequential"), "sequential"
+            )
+            edges.append(
+                ExtractedEdge(
+                    source=raw.get("source", ""),
+                    target=raw.get("target", ""),
+                    condition=raw.get("condition"),
+                    type=edge_type,
+                )
+            )
+        return edges
+
+    def _map_states(self, raw_fields: list[dict]) -> list[ExtractedState]:
+        """映射 SKILL JSON 状态字段到 ExtractedState"""
+        states = []
+        for raw in raw_fields:
+            states.append(
+                ExtractedState(
+                    field_name=raw.get("name", ""),
+                    type=raw.get("type", "string"),
+                    default_value=raw.get("default_value"),
+                    description=raw.get("description"),
+                    required=raw.get("required", False),
+                )
+            )
+        return states
+
+    def _extract_missing_info(self, ambiguities: list[dict]) -> list[str]:
+        """从 analysis.ambiguities 提取缺失信息"""
+        return [
+            f"{a.get('type', '未知')}: {a.get('question', '')}"
+            for a in ambiguities
+        ]
+
+
 # ============== 结构化抽取总控 ==============
 
 class StructuredExtractor:
     """结构化抽取总控 - 协调三个抽取器"""
-    
-    def __init__(self, llm: Optional[BaseLLM] = None):
+
+    def __init__(
+        self,
+        llm: Optional[BaseLLM] = None,
+        json_path: Optional[Path] = None,
+    ):
         """初始化结构化抽取器
-        
+
         Args:
             llm: LLM实例，如果为None则使用默认LLM
+            json_path: 技能输出的 JSON 文件路径，存在时优先加载
         """
         self.llm = llm
+        self.json_path = json_path
         self.node_extractor = NodeExtractor(llm)
         self.edge_extractor = EdgeExtractor(llm)
         self.state_extractor = StateExtractor(llm)
-    
+
     def extract(self, text: str) -> StructuredDocument:
         """执行完整的结构化抽取
-        
+
+        优先从 json_path 加载（Dev-time），否则走正则抽取（Fallback）。
+
         Args:
             text: 用户描述文本
-        
+
         Returns:
             结构化文档
         """
+        # Dev-time: 从技能输出的 JSON 文件加载
+        if self.json_path and self.json_path.exists():
+            logger.info(
+                "structured_extraction_from_json",
+                path=str(self.json_path),
+            )
+            return JSONLoader().load(self.json_path)
+
+        # Fallback: 正则/关键词抽取
         logger.info("structured_extraction_start", text_length=len(text))
         
         # 1. 抽取节点
@@ -622,34 +791,41 @@ class ClarificationEngine:
 
 # ============== 便捷函数 ==============
 
-def extract_structure(text: str, llm: Optional[BaseLLM] = None) -> StructuredDocument:
+def extract_structure(
+    text: str,
+    llm: Optional[BaseLLM] = None,
+    json_path: Optional[Path] = None,
+) -> StructuredDocument:
     """快速执行结构化抽取
-    
+
     Args:
         text: 用户描述文本
         llm: LLM实例
-    
+        json_path: 技能输出的 JSON 文件路径
+
     Returns:
         结构化文档
     """
-    extractor = StructuredExtractor(llm)
+    extractor = StructuredExtractor(llm, json_path=json_path)
     return extractor.extract(text)
 
 
 def extract_with_clarification(
-    text: str, 
-    llm: Optional[BaseLLM] = None
+    text: str,
+    llm: Optional[BaseLLM] = None,
+    json_path: Optional[Path] = None,
 ) -> tuple[StructuredDocument, list[ClarificationQuestion]]:
     """抽取并生成澄清问题
-    
+
     Args:
         text: 用户描述文本
         llm: LLM实例
-    
+        json_path: 技能输出的 JSON 文件路径
+
     Returns:
         (结构化文档, 澄清问题列表)
     """
-    extractor = StructuredExtractor(llm)
+    extractor = StructuredExtractor(llm, json_path=json_path)
     document = extractor.extract(text)
     
     clarifier = ClarificationEngine(llm)

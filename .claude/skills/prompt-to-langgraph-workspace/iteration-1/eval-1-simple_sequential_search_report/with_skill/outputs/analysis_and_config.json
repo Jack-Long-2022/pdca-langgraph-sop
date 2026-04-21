@@ -1,0 +1,442 @@
+{
+  "analysis": {
+    "input_summary": "用户描述了一个顺序执行的三步工作流：搜索资料、整理报告、输出结果。这是一个典型的线性信息处理流程。",
+    "identified_nodes": [
+      {
+        "node_name": "输入准备",
+        "source_text": "首先搜索相关资料",
+        "inference_type": "implicit",
+        "confidence": 0.95,
+        "reasoning": "任何工作流都需要明确的入口节点来接收用户输入，特别是搜索关键词。"
+      },
+      {
+        "node_name": "搜索资料",
+        "source_text": "首先搜索相关资料",
+        "inference_type": "explicit",
+        "confidence": 1.0,
+        "reasoning": "显式动作关键词'搜索'，涉及外部系统（搜索引擎或知识库），确认为tool_node。"
+      },
+      {
+        "node_name": "整理报告",
+        "source_text": "然后整理成报告",
+        "inference_type": "explicit",
+        "confidence": 1.0,
+        "reasoning": "显式动作关键词'整理'，需要LLM进行信息综合和内容生成，确认为thinking_node。"
+      },
+      {
+        "node_name": "输出结果",
+        "source_text": "最后输出结果",
+        "inference_type": "explicit",
+        "confidence": 1.0,
+        "reasoning": "显式动作关键词'输出'，是工作流的最终出口，确认为control_node。"
+      }
+    ],
+    "identified_edges": [
+      {
+        "edge_type": "sequential",
+        "source_text": "首先搜索相关资料",
+        "source_node": "输入准备",
+        "target_node": "搜索资料",
+        "confidence": 1.0,
+        "reasoning": "顺序连接词'首先'，表示这是第一步动作。"
+      },
+      {
+        "edge_type": "sequential",
+        "source_text": "然后整理成报告",
+        "source_node": "搜索资料",
+        "target_node": "整理报告",
+        "confidence": 1.0,
+        "reasoning": "顺序连接词'然后'，明确表示下一步动作。"
+      },
+      {
+        "edge_type": "sequential",
+        "source_text": "最后输出结果",
+        "source_node": "整理报告",
+        "target_node": "输出结果",
+        "confidence": 1.0,
+        "reasoning": "顺序连接词'最后'，表示工作流的终止步骤。"
+      }
+    ],
+    "identified_states": [
+      {
+        "field_name": "search_query",
+        "state_type": "input",
+        "source_text": "首先搜索相关资料",
+        "confidence": 0.9,
+        "reasoning": "搜索节点需要查询关键词作为输入，这是工作流的初始状态。"
+      },
+      {
+        "field_name": "search_results",
+        "state_type": "intermediate",
+        "source_text": "首先搜索相关资料，然后整理成报告",
+        "confidence": 0.95,
+        "reasoning": "搜索结果需要在搜索和整理节点之间传递。"
+      },
+      {
+        "field_name": "report_content",
+        "state_type": "intermediate",
+        "source_text": "然后整理成报告，最后输出结果",
+        "confidence": 0.95,
+        "reasoning": "整理后的报告内容需要在整理和输出节点之间传递。"
+      },
+      {
+        "field_name": "final_output",
+        "state_type": "output",
+        "source_text": "最后输出结果",
+        "confidence": 1.0,
+        "reasoning": "最终输出是工作流的目标结果。"
+      }
+    ],
+    "inferences": [
+      {
+        "inference_type": "隐含节点",
+        "content": "添加'输入准备'节点作为工作流入口",
+        "reasoning": "标准工作流模式需要明确的入口来接收和验证用户输入",
+        "confidence": 0.95
+      },
+      {
+        "inference_type": "状态推断",
+        "content": "添加search_query字段作为搜索关键词输入",
+        "reasoning": "搜索操作必须明确搜索对象",
+        "confidence": 0.9
+      },
+      {
+        "inference_type": "状态推断",
+        "content": "添加search_results字段存储搜索返回的数据",
+        "reasoning": "搜索结果需要传递给下游节点进行处理",
+        "confidence": 0.95
+      }
+    ],
+    "ambiguities": [
+      {
+        "type": "动作对象不明",
+        "source_text": "搜索相关资料",
+        "question": "搜索资料的具体来源是什么？",
+        "suggested_options": [
+          "搜索引擎（Google/Bing）",
+          "内部知识库",
+          "学术数据库",
+          "自定义API"
+        ]
+      },
+      {
+        "type": "动作对象不明",
+        "source_text": "整理成报告",
+        "question": "报告的具体格式和内容要求是什么？",
+        "suggested_options": [
+          "Markdown格式摘要",
+          "结构化分析报告",
+          "简明要点列表",
+          "完整文档（包含章节、引用）"
+        ]
+      },
+      {
+        "type": "动作对象不明",
+        "source_text": "输出结果",
+        "question": "输出的目标和格式是什么？",
+        "suggested_options": [
+          "保存到文件",
+          "显示在控制台",
+          "发送到API",
+          "返回给调用方"
+        ]
+      }
+    ],
+    "assumptions": [
+      {
+        "assumption": "使用通用搜索引擎作为搜索来源",
+        "reason": "用户未明确指定搜索源，使用最常见的默认选项",
+        "impact": "如需特定搜索源，需修改tool_config配置"
+      },
+      {
+        "assumption": "报告采用Markdown格式",
+        "reason": "Markdown是最通用的文本格式，易于阅读和转换",
+        "impact": "如需其他格式（PDF、HTML等），需调整thinking_node的prompt_template"
+      },
+      {
+        "assumption": "输出结果返回给调用方",
+        "reason": "最通用的输出方式，适用于大多数集成场景",
+        "impact": "如需文件保存或发送，需添加相应的tool_node"
+      }
+    ]
+  },
+  "config": {
+    "workflow_id": "wf_search_report_001",
+    "workflow_name": "资料搜索与报告生成工作流",
+    "description": "一个顺序执行的信息处理工作流，包含搜索资料、整理成报告、输出结果三个主要步骤，适用于需要从外部获取信息并生成结构化报告的场景。",
+    "version": "1.0.0",
+    "metadata": {
+      "author": "AI Assistant",
+      "created_at": "2026-04-21T00:00:00Z",
+      "source_input": "首先搜索相关资料，然后整理成报告，最后输出结果。"
+    },
+    "nodes": [
+      {
+        "node_id": "node_control_001",
+        "node_name": "输入准备",
+        "node_type": "control_node",
+        "node_subtype": "input_node",
+        "description": "接收并验证用户输入的搜索关键词，确保输入数据完整性",
+        "input_schema": {
+          "fields": [
+            {
+              "name": "raw_input",
+              "type": "object",
+              "required": true,
+              "description": "原始用户输入对象"
+            }
+          ]
+        },
+        "output_schema": {
+          "fields": [
+            {
+              "name": "validated_input",
+              "type": "object",
+              "required": true,
+              "description": "验证后的输入数据"
+            },
+            {
+              "name": "search_query",
+              "type": "string",
+              "required": true,
+              "description": "提取的搜索查询字符串"
+            }
+          ]
+        },
+        "config": {
+          "validation_rules": [
+            {
+              "field": "search_query",
+              "rule": "non_empty",
+              "message": "搜索关键词不能为空"
+            },
+            {
+              "field": "search_query",
+              "rule": "min_length",
+              "value": 2,
+              "message": "搜索关键词至少需要2个字符"
+            }
+          ]
+        },
+        "metadata": {
+          "inference_type": "implicit",
+          "source_text": "工作流入口推断"
+        }
+      },
+      {
+        "node_id": "node_tool_001",
+        "node_name": "搜索资料",
+        "node_type": "tool_node",
+        "node_subtype": "search",
+        "description": "根据搜索关键词查询相关资料，支持多种搜索引擎和数据源",
+        "input_schema": {
+          "fields": [
+            {
+              "name": "search_query",
+              "type": "string",
+              "required": true,
+              "description": "搜索查询字符串"
+            },
+            {
+              "name": "max_results",
+              "type": "integer",
+              "required": false,
+              "default": 10,
+              "description": "返回结果最大数量"
+            }
+          ]
+        },
+        "output_schema": {
+          "fields": [
+            {
+              "name": "search_results",
+              "type": "array",
+              "required": true,
+              "description": "搜索结果列表"
+            },
+            {
+              "name": "result_count",
+              "type": "integer",
+              "required": true,
+              "description": "结果数量"
+            }
+          ]
+        },
+        "config": {
+          "tool_config": {
+            "search_engine": "default",
+            "timeout": 30000,
+            "retry_count": 3
+          }
+        },
+        "metadata": {
+          "inference_type": "explicit",
+          "source_text": "首先搜索相关资料"
+        }
+      },
+      {
+        "node_id": "node_thinking_001",
+        "node_name": "整理报告",
+        "node_type": "thinking_node",
+        "node_subtype": "summarization",
+        "description": "分析搜索结果并整理成结构化的报告，提取关键信息和要点",
+        "input_schema": {
+          "fields": [
+            {
+              "name": "search_results",
+              "type": "array",
+              "required": true,
+              "description": "搜索结果数据"
+            },
+            {
+              "name": "report_format",
+              "type": "string",
+              "required": false,
+              "default": "markdown",
+              "description": "报告输出格式"
+            }
+          ]
+        },
+        "output_schema": {
+          "fields": [
+            {
+              "name": "report_content",
+              "type": "string",
+              "required": true,
+              "description": "生成的报告内容"
+            },
+            {
+              "name": "summary",
+              "type": "string",
+              "required": true,
+              "description": "报告摘要"
+            }
+          ]
+        },
+        "config": {
+          "prompt_template": "你是一个专业的信息分析师。请根据以下搜索结果，整理成一份结构清晰、内容准确的报告。\n\n要求：\n1. 提取关键信息和要点\n2. 按逻辑顺序组织内容\n3. 使用Markdown格式\n4. 包含适当的标题和段落\n\n搜索结果：\n{search_results}\n\n请生成报告：",
+          "llm_config": {
+            "model": "default",
+            "temperature": 0.7,
+            "max_tokens": 2000
+          }
+        },
+        "metadata": {
+          "inference_type": "explicit",
+          "source_text": "然后整理成报告"
+        }
+      },
+      {
+        "node_id": "node_control_002",
+        "node_name": "输出结果",
+        "node_type": "control_node",
+        "node_subtype": "output_node",
+        "description": "将最终报告输出给调用方，完成工作流执行",
+        "input_schema": {
+          "fields": [
+            {
+              "name": "report_content",
+              "type": "string",
+              "required": true,
+              "description": "报告内容"
+            },
+            {
+              "name": "summary",
+              "type": "string",
+              "required": true,
+              "description": "报告摘要"
+            }
+          ]
+        },
+        "output_schema": {
+          "fields": [
+            {
+              "name": "final_output",
+              "type": "object",
+              "required": true,
+              "description": "最终输出对象",
+              "properties": {
+                "report": "string",
+                "summary": "string",
+                "timestamp": "string",
+                "status": "string"
+              }
+            }
+          ]
+        },
+        "config": {
+          "output_format": "json",
+          "include_metadata": true
+        },
+        "metadata": {
+          "inference_type": "explicit",
+          "source_text": "最后输出结果"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "edge_id": "edge_input_tool_sequential",
+        "source": "node_control_001",
+        "target": "node_tool_001",
+        "edge_type": "sequential",
+        "condition": null
+      },
+      {
+        "edge_id": "edge_tool_thinking_sequential",
+        "source": "node_tool_001",
+        "target": "node_thinking_001",
+        "edge_type": "sequential",
+        "condition": null
+      },
+      {
+        "edge_id": "edge_thinking_output_sequential",
+        "source": "node_thinking_001",
+        "target": "node_control_002",
+        "edge_type": "sequential",
+        "condition": null
+      }
+    ],
+    "state_schema": {
+      "fields": [
+        {
+          "name": "search_query",
+          "type": "string",
+          "required": true,
+          "description": "用户提供的搜索关键词",
+          "state_type": "input"
+        },
+        {
+          "name": "search_results",
+          "type": "array",
+          "required": true,
+          "description": "搜索工具返回的结果数据",
+          "state_type": "intermediate"
+        },
+        {
+          "name": "report_content",
+          "type": "string",
+          "required": true,
+          "description": "LLM生成的报告内容",
+          "state_type": "intermediate"
+        },
+        {
+          "name": "final_output",
+          "type": "object",
+          "required": true,
+          "description": "工作流最终输出结果",
+          "state_type": "output"
+        }
+      ]
+    },
+    "entry_point": "node_control_001",
+    "finish_point": "node_control_002",
+    "config": {
+      "timeout": 300000,
+      "max_retries": 3,
+      "enable_checkpoint": true,
+      "enable_logging": true,
+      "log_level": "info"
+    }
+  }
+}

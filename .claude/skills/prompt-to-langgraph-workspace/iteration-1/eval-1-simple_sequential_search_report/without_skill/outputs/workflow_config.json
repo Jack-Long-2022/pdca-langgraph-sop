@@ -1,0 +1,116 @@
+{
+  "workflow_name": "simple_sequential_search_report",
+  "description": "简单的顺序工作流：搜索相关资料，整理成报告，输出结果",
+  "version": "1.0.0",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "name": "开始",
+      "outputs": ["search_materials"]
+    },
+    {
+      "id": "search_materials",
+      "type": "action",
+      "name": "搜索相关资料",
+      "action_type": "search",
+      "config": {
+        "search_sources": ["web", "database", "documents"],
+        "timeout": 30000,
+        "max_results": 50
+      },
+      "outputs": ["organize_report"]
+    },
+    {
+      "id": "organize_report",
+      "type": "action",
+      "name": "整理成报告",
+      "action_type": "organize",
+      "config": {
+        "organization_strategy": "categorize",
+        "include_summary": true,
+        "include_citations": true
+      },
+      "outputs": ["output_results"]
+    },
+    {
+      "id": "output_results",
+      "type": "action",
+      "name": "输出结果",
+      "action_type": "output",
+      "config": {
+        "output_formats": ["json", "markdown"],
+        "save_to_file": true,
+        "include_metadata": true
+      },
+      "outputs": ["end"]
+    },
+    {
+      "id": "end",
+      "type": "end",
+      "name": "结束"
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "search_materials"
+    },
+    {
+      "from": "search_materials",
+      "to": "organize_report"
+    },
+    {
+      "from": "organize_report",
+      "to": "output_results"
+    },
+    {
+      "from": "output_results",
+      "to": "end"
+    }
+  ],
+  "state_schema": {
+    "search_query": {
+      "type": "string",
+      "default": "",
+      "description": "搜索查询关键词"
+    },
+    "search_results": {
+      "type": "array",
+      "default": [],
+      "description": "搜索到的原始资料"
+    },
+    "organized_content": {
+      "type": "object",
+      "default": null,
+      "description": "整理后的报告内容"
+    },
+    "final_output": {
+      "type": "object",
+      "default": null,
+      "description": "最终输出的结果"
+    },
+    "execution_status": {
+      "type": "string",
+      "default": "pending",
+      "description": "工作流执行状态"
+    },
+    "errors": {
+      "type": "array",
+      "default": [],
+      "description": "执行过程中的错误信息"
+    },
+    "metadata": {
+      "type": "object",
+      "default": {},
+      "description": "工作流执行的元数据"
+    }
+  },
+  "metadata": {
+    "created_at": "2025-04-21T12:00:00Z",
+    "created_by": "workflow_generator",
+    "workflow_type": "sequential",
+    "complexity": "simple",
+    "tags": ["sequential", "search", "report", "simple"]
+  }
+}

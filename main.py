@@ -1,12 +1,18 @@
 """PDCA-LangGraph-SOP 主入口"""
 
 import argparse
+import os
 from pathlib import Path
 from typing import Optional
+
+from dotenv import load_dotenv
 
 from pdca.core.config import get_config, Config
 from pdca.core.logger import setup_logging, get_logger, LogConfig, set_log_config
 from pdca.core.llm import setup_llm, get_llm_manager
+
+# 加载环境变量
+load_dotenv()
 
 
 def parse_args():
@@ -34,13 +40,23 @@ def parse_args():
     )
     parser.add_argument(
         "--llm-provider",
-        default="openai",
+        default=os.getenv("LLM_PROVIDER", "zhipu"),
         help="LLM提供商"
     )
     parser.add_argument(
         "--llm-model",
-        default="gpt-4",
+        default=os.getenv("ZHIPU_MODEL", "glm-4.7"),
         help="LLM模型"
+    )
+    parser.add_argument(
+        "--llm-base-url",
+        default=os.getenv("ZHIPU_BASE_URL"),
+        help="LLM API基础URL"
+    )
+    parser.add_argument(
+        "--llm-api-key",
+        default=os.getenv("ZHIPU_API_KEY"),
+        help="LLM API密钥"
     )
     parser.add_argument(
         "--init-only",
@@ -55,17 +71,21 @@ def initialize(
     config_dir: Optional[Path] = None,
     log_dir: Optional[Path] = None,
     log_level: str = "INFO",
-    llm_provider: str = "openai",
-    llm_model: str = "gpt-4"
+    llm_provider: str = os.getenv("LLM_PROVIDER", "zhipu"),
+    llm_model: str = os.getenv("ZHIPU_MODEL", "glm-4.7"),
+    llm_base_url: Optional[str] = os.getenv("ZHIPU_BASE_URL"),
+    llm_api_key: Optional[str] = os.getenv("ZHIPU_API_KEY")
 ):
     """初始化系统组件
-    
+
     Args:
         config_dir: 配置文件目录
         log_dir: 日志目录
         log_level: 日志级别
         llm_provider: LLM提供商
         llm_model: LLM模型
+        llm_base_url: LLM API基础URL
+        llm_api_key: LLM API密钥
     """
     # 初始化日志
     log_config = LogConfig(
@@ -82,7 +102,9 @@ def initialize(
     setup_llm(
         name="default",
         provider=llm_provider,
-        model=llm_model
+        model=llm_model,
+        api_key=llm_api_key,
+        base_url=llm_base_url
     )
     
     logger.info(
@@ -105,7 +127,9 @@ def main():
         log_dir=args.log_dir,
         log_level=args.log_level,
         llm_provider=args.llm_provider,
-        llm_model=args.llm_model
+        llm_model=args.llm_model,
+        llm_base_url=args.llm_base_url,
+        llm_api_key=args.llm_api_key
     )
     
     if args.init_only:

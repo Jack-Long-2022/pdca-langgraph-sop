@@ -1,0 +1,1 @@
+{"eval_id": 3, "eval_name": "parallel_multi_source_search", "prompt": "帮我设计一个工作流：同时从网页、数据库和文档库三个来源搜索资料，然后把结果合并，最后生成摘要。", "assertions": []}

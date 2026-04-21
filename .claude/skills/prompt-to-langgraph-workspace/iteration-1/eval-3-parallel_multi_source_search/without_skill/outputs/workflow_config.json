@@ -1,0 +1,249 @@
+{
+  "workflow_name": "parallel_multi_source_search",
+  "description": "并行多源搜索工作流：同时从网页、数据库和文档库搜索资料，合并结果后生成摘要",
+  "version": "1.0.0",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "name": "开始",
+      "outputs": ["search_web", "search_database", "search_documents"]
+    },
+    {
+      "id": "search_web",
+      "type": "action",
+      "name": "搜索网页",
+      "action_type": "search",
+      "config": {
+        "source_type": "web",
+        "search_engine": "google",
+        "max_results": 10,
+        "timeout": 30000,
+        "retry_on_failure": true,
+        "max_retries": 2
+      },
+      "outputs": ["collect_results"]
+    },
+    {
+      "id": "search_database",
+      "type": "action",
+      "name": "搜索数据库",
+      "action_type": "search",
+      "config": {
+        "source_type": "database",
+        "database_type": "postgresql",
+        "query_timeout": 25000,
+        "max_records": 50,
+        "connection_pool": true,
+        "retry_on_connection_loss": true
+      },
+      "outputs": ["collect_results"]
+    },
+    {
+      "id": "search_documents",
+      "type": "action",
+      "name": "搜索文档库",
+      "action_type": "search",
+      "config": {
+        "source_type": "document_repository",
+        "repository_type": "elasticsearch",
+        "index_pattern": "*",
+        "max_documents": 20,
+        "search_timeout": 20000,
+        "include_metadata": true
+      },
+      "outputs": ["collect_results"]
+    },
+    {
+      "id": "collect_results",
+      "type": "merge",
+      "name": "收集和合并结果",
+      "merge_type": "parallel_reduce",
+      "config": {
+        "wait_for_all": true,
+        "merge_strategy": "concatenate_deduplicate",
+        "deduplication_field": "url",
+        "sort_by": "relevance",
+        "max_total_results": 100
+      },
+      "outputs": ["generate_summary"]
+    },
+    {
+      "id": "generate_summary",
+      "type": "action",
+      "name": "生成摘要",
+      "action_type": "summarize",
+      "config": {
+        "summary_type": "comprehensive",
+        "max_length": 500,
+        "include_key_points": true,
+        "include_source_counts": true,
+        "language": "chinese",
+        "llm_model": "claude-3-5-sonnet",
+        "temperature": 0.7
+      },
+      "outputs": ["format_output"]
+    },
+    {
+      "id": "format_output",
+      "type": "action",
+      "name": "格式化输出",
+      "action_type": "format",
+      "config": {
+        "output_formats": ["json", "markdown"],
+        "include_timestamp": true,
+        "include_source_breakdown": true,
+        "include_execution_metrics": true,
+        "save_to_file": true
+      },
+      "outputs": ["end"]
+    },
+    {
+      "id": "end",
+      "type": "end",
+      "name": "结束"
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "search_web",
+      "parallel_group": "parallel_search"
+    },
+    {
+      "from": "start",
+      "to": "search_database",
+      "parallel_group": "parallel_search"
+    },
+    {
+      "from": "start",
+      "to": "search_documents",
+      "parallel_group": "parallel_search"
+    },
+    {
+      "from": "search_web",
+      "to": "collect_results",
+      "parallel_group": "parallel_search"
+    },
+    {
+      "from": "search_database",
+      "to": "collect_results",
+      "parallel_group": "parallel_search"
+    },
+    {
+      "from": "search_documents",
+      "to": "collect_results",
+      "parallel_group": "parallel_search"
+    },
+    {
+      "from": "collect_results",
+      "to": "generate_summary"
+    },
+    {
+      "from": "generate_summary",
+      "to": "format_output"
+    },
+    {
+      "from": "format_output",
+      "to": "end"
+    }
+  ],
+  "parallel_execution": {
+    "parallel_search": {
+      "execution_mode": "concurrent",
+      "max_concurrent_tasks": 3,
+      "timeout": 60000,
+      "continue_on_error": true,
+      "error_handling": "collect_and_continue"
+    }
+  },
+  "state_schema": {
+    "search_query": {
+      "type": "string",
+      "default": "",
+      "description": "搜索查询关键词"
+    },
+    "web_results": {
+      "type": "array",
+      "default": [],
+      "description": "从网页搜索获得的结果"
+    },
+    "database_results": {
+      "type": "array",
+      "default": [],
+      "description": "从数据库查询获得的结果"
+    },
+    "document_results": {
+      "type": "array",
+      "default": [],
+      "description": "从文档库搜索获得的结果"
+    },
+    "merged_results": {
+      "type": "array",
+      "default": [],
+      "description": "合并并去重后的所有结果"
+    },
+    "summary": {
+      "type": "object",
+      "default": null,
+      "description": "生成的摘要内容"
+    },
+    "final_output": {
+      "type": "object",
+      "default": null,
+      "description": "格式化后的最终输出"
+    },
+    "execution_metrics": {
+      "type": "object",
+      "default": {},
+      "description": "执行指标（耗时、成功率等）"
+    },
+    "errors": {
+      "type": "array",
+      "default": [],
+      "description": "执行过程中的错误信息"
+    },
+    "source_breakdown": {
+      "type": "object",
+      "default": {},
+      "description": "各来源结果统计"
+    }
+  },
+  "merge_config": {
+    "strategy": "parallel_reduce",
+    "wait_for_all": true,
+    "deduplication": {
+      "enabled": true,
+      "field": "url",
+      "algorithm": "hash_based"
+    },
+    "ranking": {
+      "enabled": true,
+      "field": "relevance",
+      "order": "descending"
+    },
+    "limit": {
+      "enabled": true,
+      "max_results": 100
+    }
+  },
+  "summary_config": {
+    "type": "comprehensive",
+    "max_length": 500,
+    "include_key_points": true,
+    "include_source_counts": true,
+    "llm_config": {
+      "model": "claude-3-5-sonnet",
+      "temperature": 0.7,
+      "max_tokens": 1000
+    }
+  },
+  "metadata": {
+    "created_at": "2025-04-21T12:00:00Z",
+    "created_by": "workflow_generator",
+    "workflow_type": "parallel",
+    "complexity": "intermediate",
+    "tags": ["parallel", "multi_source", "merge", "summarization"],
+    "estimated_execution_time": "30-60s"
+  }
+}

@@ -1,0 +1,1 @@
+{"eval_id": 4, "eval_name": "complex_approval_workflow", "prompt": "把这个任务步骤变成配置文件：用户提交申请 → 系统验证 → 如果验证失败返回错误 → 如果验证通过则发送给管理员审核 → 管理员批准则通过，拒绝则结束 → 通过后发送通知邮件", "assertions": []}
