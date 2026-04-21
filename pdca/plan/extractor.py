@@ -1,6 +1,7 @@
 """结构化抽取模块
 
 从用户描述文本中抽取节点、边和状态信息
+使用LLM进行深度推理，质量优先
 """
 
 import json
@@ -61,28 +62,17 @@ class ClarificationQuestion(BaseModel):
     priority: str = Field(default="medium", description="优先级: high/medium/low")
 
 
-# ============== 节点抽取器 ==============
+# ============== LLM节点抽取器 ==============
 
 class NodeExtractor:
-    """节点抽取器 - 从文本中识别和抽取节点"""
+    """节点抽取器 - 使用LLM深度理解文本并抽取节点"""
     
-    # 工具节点关键词
-    TOOL_KEYWORDS = [
-        '调用', '执行', '运行', '使用', '获取', '查询', '发送', '上传', '下载',
-        '处理', '转换', '格式化', '验证', '检查', '计算', '存储', '保存'
-    ]
-    
-    # 思维节点关键词
-    THOUGHT_KEYWORDS = [
-        '分析', '思考', '判断', '评估', '总结', '生成', '创建', '设计',
-        '规划', '推理', '理解', '识别', '分类', '提取'
-    ]
-    
-    # 控制节点关键词
-    CONTROL_KEYWORDS = [
-        '开始', '结束', '终止', '跳过', '重试', '循环', '分支',
-        '如果', '当', '则', '否则', '或者'
-    ]
+    # Node type definitions for LLM
+    NODE_TYPE_DEFINITIONS = {
+        "tool": "执行具体操作，如调用API、处理数据、存储文件等",
+        "thought": "进行思考、分析、判断、推理等活动",
+        "control": "控制流程，如开始、结束、条件分支、循环等"
+    }
     
     def __init__(self, llm: Optional[BaseLLM] = None):
         """初始化节点抽取器
@@ -92,44 +82,96 @@ class NodeExtractor:
         """
         self.llm = llm or get_llm_manager().get_llm()
     
-    def _identify_node_type(self, verb_phrase: str) -> str:
-        """识别节点类型
+    def extract(self, text: str) -> list[ExtractedNode]:
+        """从文本中抽取节点（使用LLM推理）
         
         Args:
-            verb_phrase: 动词短语
+            text: 用户描述文本
         
         Returns:
-            节点类型: tool/thought/control
+            节点列表
         """
-        # 优先检查控制关键词（特别是开头的控制词如"开始"、"结束"）
-        for keyword in self.CONTROL_KEYWORDS:
-            if verb_phrase.startswith(keyword):
-                return 'control'
+        logger.debug("extracting_nodes_with_llm", text_length=len(text))
         
-        # 检查思维关键词
-        for keyword in self.THOUGHT_KEYWORDS:
-            if keyword in verb_phrase:
-                return 'thought'
+        prompt = self._build_extraction_prompt(text)
         
-        # 检查工具关键词
-        for keyword in self.TOOL_KEYWORDS:
-            if keyword in verb_phrase:
-                return 'tool'
-        
-        # 默认为工具节点
-        return 'tool'
+        try:
+            response = self.llm.generate(prompt)
+            nodes = self._parse_llm_response(response, text)
+            logger.info("nodes_extraction_complete", count=len(nodes))
+            return nodes
+        except Exception as e:
+            logger.error("llm_extraction_failed", error=str(e))
+            # Fallback to simple extraction
+            return self._fallback_extract(text)
     
-    def _extract_verb_phrases(self, text: str) -> list[str]:
-        """提取动词短语
+    def _build_extraction_prompt(self, text: str) -> str:
+        """构建抽取Prompt"""
+        return f"""你是一个工作流架构师，需要从用户描述中抽取节点。
+
+用户描述：
+{text}
+
+请分析这段描述，识别出所有关键的工作流节点。对于每个节点，请确定：
+1. 节点名称（简洁的动作描述）
+2. 节点类型（tool/thought/control）
+3. 节点功能描述
+4. 输入参数（如有）
+5. 输出参数（如有）
+
+节点类型定义：
+- tool: 执行具体操作（调用API、处理数据、存储文件等）
+- thought: 进行思考分析（分析、判断、推理、总结等）
+- control: 控制流程（开始、结束、条件分支、循环等）
+
+请以JSON格式输出节点列表：
+{{
+    "nodes": [
+        {{
+            "name": "节点名称",
+            "type": "tool|thought|control",
+            "description": "节点功能描述",
+            "inputs": ["参数1", "参数2"],
+            "outputs": ["输出1"]
+        }}
+    ]
+}}
+
+只输出JSON，不要有其他内容。"""
+    
+    def _parse_llm_response(self, response: str, original_text: str) -> list[ExtractedNode]:
+        """解析LLM响应"""
+        try:
+            # 提取JSON
+            json_match = re.search(r'\{[\s\S]*\}', response)
+            if json_match:
+                data = json.loads(json_match.group())
+                nodes_data = data.get("nodes", [])
+                
+                nodes = []
+                for node_data in nodes_data:
+                    node = ExtractedNode(
+                        node_id=f"node_{uuid.uuid4().hex[:8]}",
+                        name=node_data.get("name", "未命名节点"),
+                        type=node_data.get("type", "tool"),
+                        description=node_data.get("description"),
+                        inputs=node_data.get("inputs", []),
+                        outputs=node_data.get("outputs", []),
+                        config={}
+                    )
+                    nodes.append(node)
+                
+                return nodes
+        except json.JSONDecodeError as e:
+            logger.warning("json_parse_failed", error=str(e))
         
-        Args:
-            text: 输入文本
+        return self._fallback_extract(original_text)
+    
+    def _fallback_extract(self, text: str) -> list[ExtractedNode]:
+        """备用抽取方法（简单正则）"""
+        logger.warning("using_fallback_extraction")
         
-        Returns:
-            动词短语列表
-        """
-        # 使用正则表达式提取动词开头的短语
-        # 匹配 "先/然后/接着" 等顺序词后面的动词短语
+        # 简单的动词短语提取
         patterns = [
             r'(?:首先|先|第一|接着|然后|之后|随后|最后|最终)([^\n，。！？]+)',
             r'([^\n，。！？]+(?:调用|执行|运行|使用|获取|查询|分析|判断|生成|创建|开始|结束))',
@@ -140,71 +182,51 @@ class NodeExtractor:
             matches = re.findall(pattern, text)
             phrases.extend(matches)
         
-        return phrases
-    
-    def _generate_node_name(self, verb_phrase: str) -> str:
-        """生成节点名称
-        
-        Args:
-            verb_phrase: 动词短语
-        
-        Returns:
-            节点名称
-        """
-        # 清理并格式化名称
-        name = verb_phrase.strip()
-        # 移除句末标点
-        name = re.sub(r'[。！？；]$', '', name)
-        # 限制长度
-        if len(name) > 20:
-            name = name[:17] + '...'
-        return name
-    
-    def extract(self, text: str) -> list[ExtractedNode]:
-        """从文本中抽取节点
-        
-        Args:
-            text: 用户描述文本
-        
-        Returns:
-            节点列表
-        """
-        logger.debug("extracting_nodes", text_length=len(text))
+        # 去重
+        seen = set()
+        unique_phrases = []
+        for p in phrases:
+            p = p.strip()
+            if p and p not in seen and len(p) >= 2:
+                seen.add(p)
+                unique_phrases.append(p)
         
         nodes = []
-        verb_phrases = self._extract_verb_phrases(text)
-        
-        for i, phrase in enumerate(verb_phrases):
-            node_type = self._identify_node_type(phrase)
-            node = ExtractedNode(
+        for i, phrase in enumerate(unique_phrases[:10]):  # 最多10个节点
+            node_type = self._infer_node_type(phrase)
+            nodes.append(ExtractedNode(
                 node_id=f"node_{uuid.uuid4().hex[:8]}",
-                name=self._generate_node_name(phrase),
+                name=phrase[:20],
                 type=node_type,
                 description=f"从文本抽取: {phrase}",
                 inputs=[],
                 outputs=[],
                 config={}
-            )
-            nodes.append(node)
-            logger.debug("node_extracted", node_id=node.node_id, name=node.name, type=node_type)
+            ))
         
-        logger.info("nodes_extraction_complete", count=len(nodes))
         return nodes
+    
+    def _infer_node_type(self, text: str) -> str:
+        """推理节点类型"""
+        text_lower = text.lower()
+        
+        control_keywords = ['开始', '结束', '终止', '如果', '当', '则', '分支', '循环']
+        for kw in control_keywords:
+            if kw in text:
+                return 'control'
+        
+        thought_keywords = ['分析', '思考', '判断', '评估', '总结', '推理', '理解', '识别']
+        for kw in thought_keywords:
+            if kw in text:
+                return 'thought'
+        
+        return 'tool'
 
 
-# ============== 边抽取器 ==============
+# ============== LLM边抽取器 ==============
 
 class EdgeExtractor:
-    """边抽取器 - 从文本中识别节点之间的关系"""
-    
-    # 顺序连接词
-    SEQUENTIAL_WORDS = ['然后', '接着', '之后', '随后', '再', '接着', '最后', '最终']
-    
-    # 条件连接词
-    CONDITIONAL_WORDS = ['如果', '当', '只要', '假如', '若是', '要是']
-    
-    # 分支连接词
-    BRANCH_WORDS = ['或者', '或者', '要么', '或者', '还是', '或者']
+    """边抽取器 - 使用LLM理解节点间关系"""
     
     def __init__(self, llm: Optional[BaseLLM] = None):
         """初始化边抽取器
@@ -214,65 +236,8 @@ class EdgeExtractor:
         """
         self.llm = llm or get_llm_manager().get_llm()
     
-    def _identify_edge_type(self, word: str, context: str = "") -> tuple[str, Optional[str]]:
-        """识别边类型
-        
-        Args:
-            word: 连接词
-            context: 上下文文本
-        
-        Returns:
-            (边类型, 条件表达式)
-        """
-        if word in self.CONDITIONAL_WORDS:
-            # 尝试提取条件表达式
-            condition = self._extract_condition(context)
-            return ('conditional', condition)
-        
-        if word in self.BRANCH_WORDS:
-            return ('conditional', None)
-        
-        return ('sequential', None)
-    
-    def _extract_condition(self, context: str) -> Optional[str]:
-        """提取条件表达式
-        
-        Args:
-            context: 上下文文本
-        
-        Returns:
-            条件表达式
-        """
-        # 简单实现：提取"如果X则Y"格式中的X
-        match = re.search(r'如果(.+?)[则|那么|就]', context)
-        if match:
-            return match.group(1).strip()
-        return None
-    
-    def _find_connections(self, text: str, nodes: list[ExtractedNode]) -> list[tuple[int, int, str]]:
-        """查找节点间的连接关系
-        
-        Args:
-            text: 原始文本
-            nodes: 节点列表
-        
-        Returns:
-            (源节点索引, 目标节点索引, 连接词) 列表
-        """
-        connections = []
-        
-        for i, word in enumerate(self.SEQUENTIAL_WORDS + self.CONDITIONAL_WORDS + self.BRANCH_WORDS):
-            if word in text:
-                # 查找连接词前的节点
-                word_pos = text.find(word)
-                for j, node in enumerate(nodes):
-                    if node.name in text[:word_pos] and j < len(nodes) - 1:
-                        connections.append((j, j + 1, word))
-        
-        return connections
-    
     def extract(self, text: str, nodes: list[ExtractedNode]) -> list[ExtractedEdge]:
-        """从文本和节点列表中抽取边
+        """从文本和节点列表中抽取边（使用LLM推理）
         
         Args:
             text: 用户描述文本
@@ -281,62 +246,108 @@ class EdgeExtractor:
         Returns:
             边列表
         """
-        logger.debug("extracting_edges", text_length=len(text), node_count=len(nodes))
-        
-        edges = []
+        logger.debug("extracting_edges_with_llm", text_length=len(text), node_count=len(nodes))
         
         if len(nodes) < 2:
             logger.warning("insufficient_nodes_for_edges", node_count=len(nodes))
+            return []
+        
+        # 构建节点信息
+        node_info = "\n".join([
+            f"- {i+1}. {n.name} ({n.type}): {n.description or '无'}"
+            for i, n in enumerate(nodes)
+        ])
+        
+        prompt = f"""你是一个工作流设计师，需要确定节点之间的连接关系。
+
+节点列表：
+{node_info}
+
+用户原始描述：
+{text}
+
+请分析节点之间的逻辑关系，确定边的连接：
+1. 边的源节点和目标节点
+2. 边的类型（sequential/conditional/parallel）
+3. 条件表达式（如果是条件边）
+
+边类型定义：
+- sequential: 顺序执行，A完成后执行B
+- conditional: 条件执行，满足条件才执行
+- parallel: 并行执行
+
+请以JSON格式输出边列表：
+{{
+    "edges": [
+        {{
+            "source": "源节点名称",
+            "target": "目标节点名称",
+            "type": "sequential|conditional|parallel",
+            "condition": "条件表达式（如果是条件边）"
+        }}
+    ]
+}}
+
+只输出JSON，不要有其他内容。"""
+        
+        try:
+            response = self.llm.generate(prompt)
+            edges = self._parse_llm_response(response, nodes)
+            logger.info("edges_extraction_complete", count=len(edges))
             return edges
+        except Exception as e:
+            logger.error("llm_edge_extraction_failed", error=str(e))
+            return self._fallback_extract(nodes)
+    
+    def _parse_llm_response(self, response: str, nodes: list[ExtractedNode]) -> list[ExtractedEdge]:
+        """解析LLM响应"""
+        try:
+            json_match = re.search(r'\{[\s\S]*\}', response)
+            if json_match:
+                data = json.loads(json_match.group())
+                edges_data = data.get("edges", [])
+                
+                # 创建节点名称到节点的映射
+                node_map = {n.name: n for n in nodes}
+                
+                edges = []
+                for edge_data in edges_data:
+                    source_name = edge_data.get("source", "")
+                    target_name = edge_data.get("target", "")
+                    
+                    if source_name in node_map and target_name in node_map:
+                        edges.append(ExtractedEdge(
+                            source=node_map[source_name].node_id,
+                            target=node_map[target_name].node_id,
+                            condition=edge_data.get("condition"),
+                            type=edge_data.get("type", "sequential")
+                        ))
+                
+                return edges
+        except json.JSONDecodeError as e:
+            logger.warning("json_parse_failed", error=str(e))
         
-        # 查找显式连接
-        connections = self._find_connections(text, nodes)
+        return self._fallback_extract(nodes)
+    
+    def _fallback_extract(self, nodes: list[ExtractedNode]) -> list[ExtractedEdge]:
+        """备用方法：创建顺序边"""
+        logger.warning("using_fallback_edge_extraction")
         
-        for source_idx, target_idx, connector in connections:
-            edge_type, condition = self._identify_edge_type(connector, text)
-            
-            edge = ExtractedEdge(
-                source=nodes[source_idx].node_id,
-                target=nodes[target_idx].node_id,
-                condition=condition,
-                type=edge_type
-            )
-            edges.append(edge)
-            logger.debug("edge_extracted", 
-                        source=nodes[source_idx].name, 
-                        target=nodes[target_idx].name,
-                        type=edge_type)
+        edges = []
+        for i in range(len(nodes) - 1):
+            edges.append(ExtractedEdge(
+                source=nodes[i].node_id,
+                target=nodes[i + 1].node_id,
+                type='sequential'
+            ))
         
-        # 如果没有找到显式连接，假设顺序连接
-        if not edges and len(nodes) > 1:
-            for i in range(len(nodes) - 1):
-                edge = ExtractedEdge(
-                    source=nodes[i].node_id,
-                    target=nodes[i + 1].node_id,
-                    type='sequential'
-                )
-                edges.append(edge)
-            logger.info("default_sequential_edges_created", count=len(edges))
-        
-        logger.info("edges_extraction_complete", count=len(edges))
         return edges
 
 
-# ============== 状态抽取器 ==============
+# ============== LLM状态抽取器 ==============
 
 class StateExtractor:
-    """状态抽取器 - 从文本中识别数据对象和中间结果"""
-    
-    # 常见数据类型模式 - 限制前面内容的长度避免过度匹配
-    DATA_PATTERNS = [
-        (r'([^，,。\n]{1,5})的结果', 'result'),
-        (r'([^，,。\n]{1,5})的内容', 'content'),
-        (r'([^，,。\n]{1,5})的数据', 'data'),
-        (r'([^，,。\n]{1,5})的信息', 'info'),
-        (r'([^，,。\n]{1,5})的列表', 'list'),
-        (r'([^，,。\n]{1,5})的数量', 'count'),
-        (r'([^，,。\n]{1,5})的状态', 'status'),
-    ]
+    """状态抽取器 - 使用LLM识别数据对象和状态"""
     
     def __init__(self, llm: Optional[BaseLLM] = None):
         """初始化状态抽取器
@@ -346,42 +357,8 @@ class StateExtractor:
         """
         self.llm = llm or get_llm_manager().get_llm()
     
-    def _infer_type(self, field_name: str) -> str:
-        """推断字段类型
-        
-        Args:
-            field_name: 字段名称
-        
-        Returns:
-            类型字符串
-        """
-        field_lower = field_name.lower()
-        
-        if '数量' in field_name or 'count' in field_lower:
-            return 'integer'
-        if '列表' in field_name or 'list' in field_lower:
-            return 'array'
-        if '状态' in field_name or 'status' in field_lower:
-            return 'string'
-        if '结果' in field_name or 'result' in field_lower:
-            return 'any'
-        
-        return 'string'
-    
-    def _is_result_field(self, field_name: str) -> bool:
-        """判断是否为结果字段
-        
-        Args:
-            field_name: 字段名称
-        
-        Returns:
-            是否为结果字段
-        """
-        result_keywords = ['结果', 'content', 'data', 'info', 'output']
-        return any(kw in field_name.lower() for kw in result_keywords)
-    
     def extract(self, text: str) -> list[ExtractedState]:
-        """从文本中抽取状态定义
+        """从文本中抽取状态定义（使用LLM推理）
         
         Args:
             text: 用户描述文本
@@ -389,53 +366,90 @@ class StateExtractor:
         Returns:
             状态列表
         """
-        logger.debug("extracting_states", text_length=len(text))
+        logger.debug("extracting_states_with_llm", text_length=len(text))
         
-        states = []
-        seen_fields = set()
+        prompt = f"""你是一个数据架构师，需要从工作流描述中识别状态和数据对象。
+
+工作流描述：
+{text}
+
+请分析这个工作流需要管理的数据：
+1. 输入数据（工作流开始时需要的数据）
+2. 中间状态（工作流执行过程中产生的数据）
+3. 输出数据（工作流完成时产生的结果）
+4. 控制数据（循环次数、标志位等）
+
+对于每个数据对象，请确定：
+- 字段名称（英文，驼峰命名）
+- 数据类型（string/integer/boolean/array/object）
+- 默认值（如有）
+- 是否必填
+
+请以JSON格式输出状态列表：
+{{
+    "states": [
+        {{
+            "field_name": "字段名称",
+            "type": "string|integer|boolean|array|object",
+            "default_value": 默认值,
+            "description": "字段描述",
+            "required": true|false
+        }}
+    ]
+}}
+
+只输出JSON，不要有其他内容。"""
         
-        for pattern, default_type in self.DATA_PATTERNS:
-            matches = re.findall(pattern, text)
-            for match in matches:
-                field_name = match.strip()
+        try:
+            response = self.llm.generate(prompt)
+            states = self._parse_llm_response(response)
+            logger.info("states_extraction_complete", count=len(states))
+            return states
+        except Exception as e:
+            logger.error("llm_state_extraction_failed", error=str(e))
+            return self._fallback_extract()
+    
+    def _parse_llm_response(self, response: str) -> list[ExtractedState]:
+        """解析LLM响应"""
+        try:
+            json_match = re.search(r'\{[\s\S]*\}', response)
+            if json_match:
+                data = json.loads(json_match.group())
+                states_data = data.get("states", [])
                 
-                # 去重
-                if field_name in seen_fields:
-                    continue
-                seen_fields.add(field_name)
+                states = []
+                for state_data in states_data:
+                    states.append(ExtractedState(
+                        field_name=state_data.get("field_name", "unknown"),
+                        type=state_data.get("type", "string"),
+                        default_value=state_data.get("default_value"),
+                        description=state_data.get("description"),
+                        required=state_data.get("required", False)
+                    ))
                 
-                # 跳过太短或太长的字段名
-                if len(field_name) < 2 or len(field_name) > 30:
-                    continue
-                
-                state = ExtractedState(
-                    field_name=field_name,
-                    type=self._infer_type(field_name),
-                    default_value=None,
-                    description=f"从文本抽取: {field_name}",
-                    required=self._is_result_field(field_name)
-                )
-                states.append(state)
-                logger.debug("state_extracted", field_name=field_name, type=state.type)
+                return states
+        except json.JSONDecodeError as e:
+            logger.warning("json_parse_failed", error=str(e))
         
-        # 添加默认状态
-        if not states:
-            states.append(ExtractedState(
-                field_name="input_text",
+        return self._fallback_extract()
+    
+    def _fallback_extract(self) -> list[ExtractedState]:
+        """备用方法：返回默认状态"""
+        return [
+            ExtractedState(
+                field_name="inputText",
                 type="string",
                 default_value="",
                 description="用户输入文本",
                 required=True
-            ))
-            states.append(ExtractedState(
+            ),
+            ExtractedState(
                 field_name="result",
                 type="any",
                 description="处理结果",
                 required=True
-            ))
-        
-        logger.info("states_extraction_complete", count=len(states))
-        return states
+            )
+        ]
 
 
 # ============== JSON 加载器 ==============
@@ -591,7 +605,7 @@ class JSONLoader:
 # ============== 结构化抽取总控 ==============
 
 class StructuredExtractor:
-    """结构化抽取总控 - 协调三个抽取器"""
+    """结构化抽取总控 - 协调三个LLM抽取器"""
 
     def __init__(
         self,
@@ -611,9 +625,9 @@ class StructuredExtractor:
         self.state_extractor = StateExtractor(llm)
 
     def extract(self, text: str) -> StructuredDocument:
-        """执行完整的结构化抽取
+        """执行完整的结构化抽取（使用LLM推理）
 
-        优先从 json_path 加载（Dev-time），否则走正则抽取（Fallback）。
+        优先从 json_path 加载（Dev-time），否则走LLM抽取。
 
         Args:
             text: 用户描述文本
@@ -629,16 +643,16 @@ class StructuredExtractor:
             )
             return JSONLoader().load(self.json_path)
 
-        # Fallback: 正则/关键词抽取
+        # LLM抽取
         logger.info("structured_extraction_start", text_length=len(text))
         
-        # 1. 抽取节点
+        # 1. 抽取节点（LLM推理）
         nodes = self.node_extractor.extract(text)
         
-        # 2. 抽取边（依赖节点）
+        # 2. 抽取边（LLM推理）
         edges = self.edge_extractor.extract(text, nodes)
         
-        # 3. 抽取状态
+        # 3. 抽取状态（LLM推理）
         states = self.state_extractor.extract(text)
         
         # 4. 检查缺失信息
@@ -667,24 +681,12 @@ class StructuredExtractor:
         edges: list[ExtractedEdge], 
         states: list[ExtractedState]
     ) -> list[str]:
-        """检查缺失信息
-        
-        Args:
-            text: 原始文本
-            nodes: 节点列表
-            edges: 边列表
-            states: 状态列表
-        
-        Returns:
-            缺失信息列表
-        """
+        """检查缺失信息"""
         missing = []
         
-        # 检查节点数量
         if len(nodes) < 2:
             missing.append("节点数量不足，至少需要2个节点")
         
-        # 检查边连通性
         if edges:
             node_ids = {n.node_id for n in nodes}
             connected = set()
@@ -696,17 +698,16 @@ class StructuredExtractor:
                 disconnected = node_ids - connected
                 missing.append(f"存在未连接的节点: {disconnected}")
         
-        # 检查状态定义
         if not states:
             missing.append("缺少状态定义")
         
         return missing
 
 
-# ============== 澄清引导引擎 ==============
+# ============== LLM澄清引导引擎 ==============
 
 class ClarificationEngine:
-    """澄清引导引擎 - 识别信息缺失并生成澄清问题"""
+    """澄清引导引擎 - 使用LLM智能识别信息缺失并生成澄清问题"""
     
     def __init__(self, llm: Optional[BaseLLM] = None):
         """初始化澄清引擎
@@ -717,7 +718,7 @@ class ClarificationEngine:
         self.llm = llm or get_llm_manager().get_llm()
     
     def identify_ambiguities(self, document: StructuredDocument) -> list[ClarificationQuestion]:
-        """识别文档中的歧义
+        """识别文档中的歧义（使用LLM深度分析）
         
         Args:
             document: 结构化文档
@@ -725,18 +726,96 @@ class ClarificationEngine:
         Returns:
             澄清问题列表
         """
+        # 构建文档摘要
+        nodes_summary = "\n".join([
+            f"- {n.name} ({n.type}): {n.description or '无描述'}"
+            for n in document.nodes
+        ])
+        edges_summary = "\n".join([
+            f"- {e.source} -> {e.target} ({e.type})"
+            for e in document.edges
+        ])
+        states_summary = "\n".join([
+            f"- {s.field_name} ({s.type}): {s.description or '无'}"
+            for s in document.states
+        ])
+        
+        prompt = f"""你是一个需求分析师，需要识别工作流设计中的信息缺失。
+
+当前工作流结构：
+
+节点：
+{nodes_summary}
+
+边：
+{edges_summary}
+
+状态：
+{states_summary}
+
+原始描述：
+{document.raw_text}
+
+请分析这个工作流设计中存在的歧义和缺失信息，生成澄清问题。重点关注：
+1. 节点功能不明确的地方
+2. 边连接逻辑不清楚的地方
+3. 状态定义不完整的地方
+4. 可能导致执行失败的条件
+
+请以JSON格式输出澄清问题：
+{{
+    "questions": [
+        {{
+            "question": "问题内容",
+            "related_field": "关联字段（如 node:xxx 或 edge:xxx）",
+            "priority": "high|medium|low"
+        }}
+    ]
+}}
+
+只输出JSON，不要有其他内容。"""
+        
+        try:
+            response = self.llm.generate(prompt)
+            return self._parse_questions_response(response)
+        except Exception as e:
+            logger.error("llm_clarification_failed", error=str(e))
+            return self._fallback_identify(document)
+    
+    def _parse_questions_response(self, response: str) -> list[ClarificationQuestion]:
+        """解析LLM响应"""
+        try:
+            json_match = re.search(r'\{[\s\S]*\}', response)
+            if json_match:
+                data = json.loads(json_match.group())
+                questions_data = data.get("questions", [])
+                
+                questions = []
+                for q_data in questions_data:
+                    questions.append(ClarificationQuestion(
+                        question=q_data.get("question", ""),
+                        related_field=q_data.get("related_field"),
+                        priority=q_data.get("priority", "medium")
+                    ))
+                
+                return questions
+        except json.JSONDecodeError as e:
+            logger.warning("json_parse_failed", error=str(e))
+        
+        return []
+    
+    def _fallback_identify(self, document: StructuredDocument) -> list[ClarificationQuestion]:
+        """备用识别方法"""
         questions = []
         
-        # 检查缺失的节点描述
         for node in document.nodes:
-            if not node.description or node.description.startswith("从文本抽取"):
+            if not node.description or "从文本抽取" in (node.description or ""):
                 questions.append(ClarificationQuestion(
                     question=f"请详细描述节点「{node.name}」的具体功能",
                     related_field=f"node:{node.node_id}",
                     priority="high"
                 ))
         
-        # 检查缺失的边条件
         for edge in document.edges:
             if edge.type == 'conditional' and not edge.condition:
                 questions.append(ClarificationQuestion(
@@ -745,25 +824,7 @@ class ClarificationEngine:
                     priority="high"
                 ))
         
-        # 检查缺失的状态类型
-        for state in document.states:
-            if state.type == 'any':
-                questions.append(ClarificationQuestion(
-                    question=f"请明确「{state.field_name}」的数据类型",
-                    related_field=f"state:{state.field_name}",
-                    priority="medium"
-                ))
-        
-        # 检查整体流程完整性
-        if len(document.nodes) < 2:
-            questions.append(ClarificationQuestion(
-                question="工作流似乎过于简单，请确认是否描述了完整的流程？",
-                related_field="workflow",
-                priority="high"
-            ))
-        
-        logger.info("ambiguities_identified", count=len(questions))
-        return questions
+        return questions[:5]
     
     def generate_questions(
         self, 
@@ -785,7 +846,6 @@ class ClarificationEngine:
         priority_order = {'high': 0, 'medium': 1, 'low': 2}
         questions.sort(key=lambda q: priority_order.get(q.priority, 1))
         
-        # 限制数量
         return questions[:max_questions]
 
 

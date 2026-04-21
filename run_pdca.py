@@ -25,6 +25,7 @@ from pdca.plan.config_generator import ConfigGenerator
 from pdca.do_.code_generator import CodeGenerator
 from pdca.check.evaluator import run_evaluation
 from pdca.act.reviewer import GRRAVPReviewer, OptimizationGenerator
+from pdca.act.loop_controller import create_loop_controller
 
 
 def parse_args():
@@ -80,25 +81,26 @@ def parse_args():
     return parser.parse_args()
 
 
-def plan_phase(input_file: Path, workflow_name: str = None, verbose: bool = False):
+def plan_phase(input_file: Path, workflow_name: str = None, verbose: bool = False, llm: Any = None):
     """Plan阶段：从输入文本生成工作流配置
 
     步骤：
     1. 读取输入文件
-    2. 使用StructuredExtractor进行结构化抽取
+    2. 使用StructuredExtractor进行LLM结构化抽取
     3. 使用ConfigGenerator生成WorkflowConfig
 
     Args:
         input_file: 输入文件路径
         workflow_name: 工作流名称
         verbose: 是否详细输出
+        llm: LLM实例
 
     Returns:
         (StructuredDocument, WorkflowConfig)
     """
     logger = get_logger(__name__)
     print("\n" + "="*60)
-    print("[Plan] PLAN 阶段：结构化抽取与配置生成")
+    print("[Plan] PLAN 阶段：LLM结构化抽取与配置生成")
     print("="*60)
 
     # 1. 读取输入文件
@@ -110,9 +112,9 @@ def plan_phase(input_file: Path, workflow_name: str = None, verbose: bool = Fals
         print(f"\n[File] 输入内容预览:")
         print("   " + input_text[:200] + "..." if len(input_text) > 200 else "   " + input_text)
 
-    # 2. 结构化抽取
-    print(f"\n[Extract] 执行结构化抽取...")
-    extractor = StructuredExtractor()
+    # 2. LLM结构化抽取
+    print(f"\n[Extract] 执行LLM结构化抽取...")
+    extractor = StructuredExtractor(llm=llm)
     document = extractor.extract(input_text)
 
     print(f"   [OK] 抽取完成:")
@@ -125,9 +127,8 @@ def plan_phase(input_file: Path, workflow_name: str = None, verbose: bool = Fals
         for node in document.nodes:
             print(f"     - {node.name} ({node.type}): {node.description}")
 
-    # 3. 生成工作流配置
-    print(f"\n[Config]  生成工作流配置...")
-    llm = get_llm_manager().get_llm()
+    # 3. 使用LLM生成工作流配置
+    print(f"\n[Config] 使用LLM生成工作流配置...")
     generator = ConfigGenerator()
 
     # 使用LLM细化生成
@@ -145,32 +146,33 @@ def plan_phase(input_file: Path, workflow_name: str = None, verbose: bool = Fals
     return document, config
 
 
-def do_phase(config, output_dir: Path, verbose: bool = False):
+def do_phase(config, output_dir: Path, verbose: bool = False, llm: Any = None):
     """Do阶段：根据配置生成可运行的代码工程
 
     步骤：
     1. 创建输出目录
-    2. 使用CodeGenerator生成项目代码
+    2. 使用LLM CodeGenerator生成项目代码
     3. 保存配置文件
 
     Args:
         config: WorkflowConfig实例
         output_dir: 输出目录
         verbose: 是否详细输出
+        llm: LLM实例
 
     Returns:
         生成的文件映射字典
     """
     logger = get_logger(__name__)
     print("\n" + "="*60)
-    print("[Do] DO 阶段：代码生成")
+    print("[Do] DO 阶段：LLM代码生成")
     print("="*60)
 
     print(f"\n[Dir] 输出目录: {output_dir}")
 
-    # 生成代码
-    print(f"\n[Generate] 生成项目代码...")
-    generator = CodeGenerator()
+    # 使用LLM生成代码
+    print(f"\n[Generate] 使用LLM生成项目代码...")
+    generator = CodeGenerator(llm=llm)
     generated_files = generator.generate_project(config, output_dir)
 
     print(f"   [OK] 代码生成完成，共生成 {len(generated_files)} 个文件:")
@@ -178,9 +180,16 @@ def do_phase(config, output_dir: Path, verbose: bool = False):
         rel_path = filepath.relative_to(output_dir)
         print(f"     - {rel_path}")
 
-    # 保存配置JSON（便于检查）
+    # 保存配置JSON
     config_json_path = output_dir / "config" / "workflow_metadata.json"
     config_json_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    # 构建节点信息用于传递
+    nodes_info = [
+        {"name": n.name, "type": n.type, "description": n.description}
+        for n in config.nodes
+    ]
+    
     with open(config_json_path, 'w', encoding='utf-8') as f:
         json.dump({
             "workflow_id": config.meta.workflow_id,
@@ -190,6 +199,7 @@ def do_phase(config, output_dir: Path, verbose: bool = False):
             "node_count": len(config.nodes),
             "edge_count": len(config.edges),
             "state_count": len(config.state),
+            "nodes": nodes_info
         }, f, indent=1, ensure_ascii=False)
 
     print(f"\n[Check] DO阶段完成！项目已生成到: {output_dir}")
@@ -197,25 +207,26 @@ def do_phase(config, output_dir: Path, verbose: bool = False):
     return generated_files
 
 
-def check_phase(config, output_dir: Path, verbose: bool = False):
+def check_phase(config, output_dir: Path, verbose: bool = False, llm: Any = None):
     """Check阶段：运行测试并生成评估报告
 
     步骤：
-    1. 生成测试用例
+    1. 使用LLM生成测试用例
     2. 执行测试
-    3. 生成评估报告
+    3. 使用LLM生成评估报告
 
     Args:
         config: WorkflowConfig实例
         output_dir: 输出目录
         verbose: 是否详细输出
+        llm: LLM实例
 
     Returns:
         EvaluationReport实例
     """
     logger = get_logger(__name__)
     print("\n" + "="*60)
-    print("[Check] CHECK 阶段：测试与评估")
+    print("[Check] CHECK 阶段：LLM测试与评估")
     print("="*60)
 
     # 创建模拟的工作流运行器
@@ -225,9 +236,8 @@ def check_phase(config, output_dir: Path, verbose: bool = False):
         def run(self, input_data=None, timeout=30):
             """模拟运行"""
             import time
-            time.sleep(0.1)  # 模拟执行时间
+            time.sleep(0.1)
 
-            # 模拟成功率（80%通过）
             import random
             success = random.random() < 0.8
 
@@ -244,16 +254,28 @@ def check_phase(config, output_dir: Path, verbose: bool = False):
 
     runner = MockWorkflowRunner()
 
-    print(f"\n[Test] 运行测试评估...")
+    # 构建节点信息
+    nodes_info = [
+        {"name": n.name, "type": n.type, "description": n.description}
+        for n in config.nodes
+    ]
+    edges_info = [
+        {"source": e.source, "target": e.target, "type": e.type}
+        for e in config.edges
+    ]
+
+    print(f"\n[Test] 使用LLM运行测试评估...")
     print(f"   工作流: {config.meta.name}")
     print(f"   节点数: {len(config.nodes)}")
 
-    # 运行评估
+    # 运行LLM增强的评估
     report = run_evaluation(
         workflow_name=config.meta.name,
         workflow_description=config.meta.description,
         node_count=len(config.nodes),
-        workflow_runner=runner
+        workflow_runner=runner,
+        llm=llm,
+        nodes=nodes_info
     )
 
     print(f"\n[Report] 评估结果:")
@@ -265,13 +287,13 @@ def check_phase(config, output_dir: Path, verbose: bool = False):
     print(f"   执行时间: {report.execution_time:.2f}秒")
 
     if report.issues:
-        print(f"\n[Warning]  发现问题:")
-        for issue in report.issues:
+        print(f"\n[Warning] 发现问题:")
+        for issue in report.issues[:5]:
             print(f"   - {issue}")
 
     if report.suggestions:
         print(f"\n[Suggestion] 改进建议:")
-        for suggestion in report.suggestions:
+        for suggestion in report.suggestions[:5]:
             print(f"   - {suggestion}")
 
     # 保存报告
@@ -284,12 +306,12 @@ def check_phase(config, output_dir: Path, verbose: bool = False):
     return report
 
 
-def act_phase(config, report, original_goals, output_dir: Path, verbose: bool = False):
+def act_phase(config, report, original_goals, output_dir: Path, verbose: bool = False, llm: Any = None):
     """Act阶段：复盘分析并生成优化方案
 
     步骤：
-    1. 执行GR/RAVP复盘
-    2. 生成优化方案
+    1. 使用LLM执行GR/RAVP复盘
+    2. 使用LLM生成优化方案
     3. 输出改进建议
 
     Args:
@@ -298,18 +320,19 @@ def act_phase(config, report, original_goals, output_dir: Path, verbose: bool = 
         original_goals: 原始目标列表
         output_dir: 输出目录
         verbose: 是否详细输出
+        llm: LLM实例
 
     Returns:
         (GRRAVPReviewResult, list[OptimizationProposal])
     """
     logger = get_logger(__name__)
     print("\n" + "="*60)
-    print("[Act] ACT 阶段：复盘与优化")
+    print("[Act] ACT 阶段：LLM复盘与优化")
     print("="*60)
 
-    # 执行复盘
-    print(f"\n[Review] 执行GR/RAVP复盘...")
-    reviewer = GRRAVPReviewer()
+    # 使用LLM执行复盘
+    print(f"\n[Review] 使用LLM执行GR/RAVP复盘...")
+    reviewer = GRRAVPReviewer(llm=llm)
 
     review_result = reviewer.review(
         workflow_name=config.meta.name,
@@ -323,46 +346,48 @@ def act_phase(config, report, original_goals, output_dir: Path, verbose: bool = 
 
     print(f"\n[Goal] 目标回顾:")
     goal_review = review_result.goal_review
-    if goal_review.get("achieved_goals"):
-        print(f"   已达成: {len(goal_review['achieved_goals'])} 个")
-    if goal_review.get("partial_goals"):
-        print(f"   部分达成: {len(goal_review['partial_goals'])} 个")
-    if goal_review.get("missed_goals"):
-        print(f"   未达成: {len(goal_review['missed_goals'])} 个")
+    if isinstance(goal_review, dict):
+        if goal_review.get("achieved_goals"):
+            print(f"   已达成: {len(goal_review.get('achieved_goals', []))} 个")
+        if goal_review.get("partial_goals"):
+            print(f"   部分达成: {len(goal_review.get('partial_goals', []))} 个")
+        if goal_review.get("missed_goals"):
+            print(f"   未达成: {len(goal_review.get('missed_goals', []))} 个")
 
     print(f"\n[Report] 结果分析:")
     result_analysis = review_result.result_analysis
-    if result_analysis.get("success_factors"):
-        print(f"   成功因素:")
-        for factor in result_analysis["success_factors"]:
-            print(f"     [OK] {factor}")
-    if result_analysis.get("failure_factors"):
-        print(f"   失败因素:")
-        for factor in result_analysis["failure_factors"]:
-            print(f"     [FAIL] {factor}")
+    if isinstance(result_analysis, dict):
+        if result_analysis.get("success_factors"):
+            print(f"   成功因素:")
+            for factor in result_analysis.get("success_factors", [])[:3]:
+                print(f"     [OK] {factor}")
+        if result_analysis.get("failure_factors"):
+            print(f"   失败因素:")
+            for factor in result_analysis.get("failure_factors", [])[:3]:
+                print(f"     [FAIL] {factor}")
 
-    # 生成优化方案
-    print(f"\n[Suggestion] 生成优化方案...")
-    opt_generator = OptimizationGenerator()
+    # 使用LLM生成优化方案
+    print(f"\n[Suggestion] 使用LLM生成优化方案...")
+    opt_generator = OptimizationGenerator(llm=llm)
     proposals = opt_generator.generate_from_review(review_result)
     proposals = opt_generator.prioritize_proposals(proposals)
 
     print(f"   [OK] 生成了 {len(proposals)} 个优化方案:")
-    for i, proposal in enumerate(proposals, 1):
+    for i, proposal in enumerate(proposals[:3], 1):
         print(f"\n   方案 {i}: {proposal.title}")
         print(f"     优先级: {proposal.priority}")
-        print(f"     预期收益: {', '.join(proposal.expected_benefits)}")
+        print(f"     预期收益: {', '.join(proposal.expected_benefits[:2]) if proposal.expected_benefits else '无'}")
         if proposal.implementation_steps:
             print(f"     实施步骤:")
-            for step in proposal.implementation_steps:
+            for step in proposal.implementation_steps[:3]:
                 print(f"       - {step}")
 
     print(f"\n[Plan] 总体建议:")
-    for rec in review_result.recommendations:
+    for rec in review_result.recommendations[:3]:
         print(f"   - {rec}")
 
     print(f"\n[Next]  下一步行动:")
-    for step in review_result.next_steps:
+    for step in review_result.next_steps[:3]:
         print(f"   - {step}")
 
     # 保存复盘结果
@@ -392,7 +417,7 @@ def run_pdca_cycle(args):
     logger = get_logger(__name__)
 
     print("\n" + "="*60)
-    print("[PDCA] PDCA-LangGraph-SOP 自动化工作流生成")
+    print("[PDCA] PDCA-LangGraph-SOP LLM驱动的自动化工作流生成")
     print("="*60)
     print(f"输入文件: {args.input}")
     print(f"输出目录: {args.output}")
@@ -405,6 +430,7 @@ def run_pdca_cycle(args):
         provider="zhipu",
         model="glm-4.7",
     )
+    llm = get_llm_manager().get_llm()
 
     # 定义目标
     original_goals = [
@@ -413,30 +439,39 @@ def run_pdca_cycle(args):
         "工作流能够正常执行完成"
     ]
 
+    # 创建LLM循环控制器
+    loop_controller = create_loop_controller(
+        llm=llm,
+        max_iterations=args.max_iterations,
+        quality_threshold=args.quality_threshold
+    )
+    loop_controller.start("PDCA循环")
+
     # 迭代执行PDCA
     for iteration in range(1, args.max_iterations + 1):
         print(f"\n{'='*60}")
-        print(f"[Act] 第 {iteration} 次PDCA迭代")
+        print(f"[PDCA] 第 {iteration} 次PDCA迭代")
         print(f"{'='*60}")
 
         # === PLAN ===
         document, config = plan_phase(
             args.input,
             args.workflow_name,
-            args.verbose
+            args.verbose,
+            llm=llm
         )
 
         # === DO ===
         if not args.skip_do:
             output_dir = args.output / f"iteration_{iteration}"
-            generated_files = do_phase(config, output_dir, args.verbose)
+            generated_files = do_phase(config, output_dir, args.verbose, llm=llm)
         else:
             output_dir = args.output / f"iteration_{iteration}"
             output_dir.mkdir(parents=True, exist_ok=True)
 
         # === CHECK ===
         if not args.skip_check:
-            report = check_phase(config, output_dir, args.verbose)
+            report = check_phase(config, output_dir, args.verbose, llm=llm)
         else:
             print("\n⏭️  跳过CHECK阶段")
             continue
@@ -447,18 +482,26 @@ def run_pdca_cycle(args):
             report,
             original_goals,
             output_dir,
-            args.verbose
+            args.verbose,
+            llm=llm
+        )
+
+        # 记录迭代
+        loop_controller.record_iteration(
+            iteration_number=iteration,
+            status="completed",
+            pass_rate=report.pass_rate,
+            issues_found=len(report.issues)
         )
 
         # 检查是否达到质量阈值
         if report.pass_rate >= args.quality_threshold:
-            print(f"\n[Check] 达到质量阈值 ({args.quality_threshold}%)，PDCA循环完成！")
+            print(f"\n✅ 达到质量阈值 ({args.quality_threshold}%)，PDCA循环完成！")
             break
         elif iteration < args.max_iterations:
-            print(f"\n[Warning]  未达到质量阈值，继续下一次迭代...")
-            # 这里可以根据优化方案调整配置后继续
+            print(f"\n⚠️ 未达到质量阈值，继续下一次迭代...")
         else:
-            print(f"\n[Warning]  已达到最大迭代次数，PDCA循环结束")
+            print(f"\n⚠️ 已达到最大迭代次数，PDCA循环结束")
 
     print(f"\n{'='*60}")
     print("[Complete] PDCA循环执行完成！")

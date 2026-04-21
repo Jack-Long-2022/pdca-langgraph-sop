@@ -1,6 +1,7 @@
 """代码生成模块
 
 将WorkflowConfig转换为可运行的Python项目
+使用LLM进行智能代码生成
 """
 
 import os
@@ -9,8 +10,115 @@ from typing import Any, Optional
 from datetime import datetime
 from pdca.core.config import WorkflowConfig, NodeDefinition, EdgeDefinition
 from pdca.core.logger import get_logger
+from pdca.core.llm import get_llm_manager, BaseLLM
 
 logger = get_logger(__name__)
+
+
+# ============== LLM代码生成器 ==============
+
+class LLMCodeGenerator:
+    """使用LLM生成高质量的节点代码"""
+    
+    def __init__(self, llm: Optional[BaseLLM] = None):
+        self.llm = llm or get_llm_manager().get_llm()
+    
+    def generate_node_code(self, node: NodeDefinition, context: dict) -> str:
+        """使用LLM生成单个节点的代码
+        
+        Args:
+            node: 节点定义
+            context: 上下文信息（包含工作流其他节点信息）
+        
+        Returns:
+            生成的节点代码
+        """
+        prompt = self._build_node_code_prompt(node, context)
+        
+        try:
+            response = self.llm.generate(prompt)
+            # 尝试提取代码块
+            return self._extract_code(response)
+        except Exception as e:
+            logger.warning("llm_node_code_generation_failed", 
+                         node_id=node.node_id, 
+                         error=str(e))
+            return self._fallback_node_code(node)
+    
+    def _build_node_code_prompt(self, node: NodeDefinition, context: dict) -> str:
+        """构建节点代码生成prompt"""
+        other_nodes = context.get("other_nodes", [])
+        other_nodes_info = "\n".join([
+            f"- {n.name}: {n.description or '无'}"
+            for n in other_nodes
+        ]) if other_nodes else "无"
+        
+        inputs_str = ", ".join(node.inputs) if node.inputs else "state"
+        outputs_str = ", ".join(node.outputs) if node.outputs else "result"
+        
+        return f"""你是一个Python代码专家，需要为工作流节点生成LangGraph代码。
+
+节点信息：
+- 节点ID: {node.node_id}
+- 节点名称: {node.name}
+- 节点类型: {node.type}
+- 描述: {node.description or '无'}
+- 输入参数: {inputs_str}
+- 输出参数: {outputs_str}
+
+工作流中其他节点：
+{other_nodes_info}
+
+请生成这个节点的LangGraph处理函数代码。要求：
+1. 函数签名: def {node.node_id}_handler(state: WorkflowState) -> WorkflowState
+2. 使用LangGraph风格，与WorkflowState配合
+3. 输入输出参数要合理处理
+4. 添加详细的docstring
+5. 处理异常情况
+6. 代码要健壮，不能有硬编码
+
+请只输出Python代码（带```python标记）：
+```python
+# 节点处理函数
+def {node.node_id}_handler(state: WorkflowState) -> WorkflowState:
+    '''
+    节点: {node.name}
+    类型: {node.type}
+    描述: {node.description or '无'}
+    '''
+    # 你的实现代码
+    pass
+```
+"""
+    
+    def _extract_code(self, response: str) -> str:
+        """从LLM响应中提取代码"""
+        import re
+        
+        # 尝试提取python代码块
+        match = re.search(r'```python\s*([\s\S]*?)\s*```', response)
+        if match:
+            return match.group(1).strip()
+        
+        # 如果没有代码块标记，直接返回
+        match = re.search(r'(def\s+\w+_handler[\s\S]*?)(?=\n\n|\Z)', response)
+        if match:
+            return match.group(1).strip()
+        
+        return response.strip()
+    
+    def _fallback_node_code(self, node: NodeDefinition) -> str:
+        """备用节点代码"""
+        return f'''def {node.node_id}_handler(state: WorkflowState) -> WorkflowState:
+    """
+    节点: {node.name}
+    类型: {node.type}
+    描述: {node.description or '无'}
+    """
+    # TODO: 实现{node.name}的逻辑
+    result = {{"message": "{node.name}执行完成"}}
+    return {{**state, **result}}
+'''
 
 
 # ============== 项目模板 ==============
@@ -113,7 +221,6 @@ class WorkflowRunner:
         if config_path:
             self.config = self._load_config(config_path)
         else:
-            # 使用默认配置
             self.config = self._create_default_config()
         
         self._init_state()
@@ -199,7 +306,6 @@ class WorkflowRunner:
     
     def _get_execution_order(self):
         """获取执行顺序"""
-        # 简单的拓扑排序
         nodes = {{n.node_id: n for n in self.config.nodes}}
         in_degree = {{n.node_id: 0 for n in self.config.nodes}}
         
@@ -225,7 +331,6 @@ class WorkflowRunner:
     
     def _execute_node(self, node) -> Any:
         """执行单个节点"""
-        # 动态导入并调用节点模块
         node_handler = self._get_node_handler(node)
         return node_handler(self.state, node.config)
     
@@ -238,65 +343,11 @@ class WorkflowRunner:
             module = __import__(module_name, fromlist=[handler_name])
             return getattr(module, handler_name)
         except (ImportError, AttributeError):
-            # 返回默认处理器
             return self._default_node_handler
     
     def _default_node_handler(self, state: Dict, config: Dict) -> Any:
         """默认节点处理器"""
         return f"节点执行完成"
-'''
-
-    # 节点处理模板
-    NODE_HANDLER_TEMPLATE = '''"""节点处理模块 - {node_name}
-
-节点类型: {node_type}
-描述: {description}
-"""
-
-from typing import Any, Dict
-
-
-def handle_{node_id}(state: Dict[str, Any], config: Dict[str, Any]) -> Any:
-    """处理{node_name}节点
-    
-    Args:
-        state: 工作流状态
-        config: 节点配置
-    
-    Returns:
-        节点执行结果
-    """
-    # 节点输入
-    inputs = {inputs_str}
-    
-    # 节点逻辑
-    # TODO: 实现{node_name}的具体逻辑
-    
-    result = f"{{node_name}}执行完成"
-    
-    # 节点输出
-    outputs = {outputs_str}
-    
-    return result
-
-
-if __name__ == "__main__":
-    # 测试节点
-    test_state = {{}}
-    test_config = {{}}
-    result = handle_{node_id}(test_state, test_config)
-    print(f"测试结果: {{result}}")
-'''
-
-    # __init__.py模板
-    INIT_TEMPLATE = '''"""节点包
-
-自动生成的节点处理模块
-"""
-
-from .base import NodeBase
-
-__all__ = ["NodeBase"]
 '''
 
     # 工具模块模板
@@ -316,24 +367,12 @@ class ToolRegistry:
     
     @classmethod
     def register(cls, name: str, func: callable):
-        """注册工具
-        
-        Args:
-            name: 工具名称
-            func: 工具函数
-        """
+        """注册工具"""
         cls._tools[name] = func
     
     @classmethod
     def get(cls, name: str) -> callable:
-        """获取工具
-        
-        Args:
-            name: 工具名称
-        
-        Returns:
-            工具函数
-        """
+        """获取工具"""
         return cls._tools.get(name)
     
     @classmethod
@@ -345,48 +384,22 @@ class ToolRegistry:
 # 内置工具
 
 def tool_http_request(url: str, method: str = "GET", **kwargs) -> Any:
-    """HTTP请求工具
-    
-    Args:
-        url: 请求URL
-        method: 请求方法
-        **kwargs: 其他参数
-    
-    Returns:
-        响应内容
-    """
+    """HTTP请求工具"""
     import requests
-    
     response = requests.request(method, url, **kwargs)
     return response.text
 
 
 def tool_json_parser(text: str) -> Any:
-    """JSON解析工具
-    
-    Args:
-        text: JSON文本
-    
-    Returns:
-        解析后的对象
-    """
+    """JSON解析工具"""
     return json.loads(text)
 
 
 def tool_text_template(template: str, **kwargs) -> str:
-    """文本模板工具
-    
-    Args:
-        template: 模板字符串
-        **kwargs: 模板变量
-    
-    Returns:
-        渲染后的文本
-    """
+    """文本模板工具"""
     return template.format(**kwargs)
 
 
-# 注册内置工具
 ToolRegistry.register("http_request", tool_http_request)
 ToolRegistry.register("json_parser", tool_json_parser)
 ToolRegistry.register("text_template", tool_text_template)
@@ -402,7 +415,6 @@ import pytest
 from pathlib import Path
 import sys
 
-# 添加项目路径
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from pdca.do_.workflow_runner import WorkflowRunner
@@ -413,19 +425,15 @@ class TestWorkflow:
     
     @pytest.fixture
     def runner(self):
-        """创建运行器"""
         return WorkflowRunner(verbose=True)
     
     def test_workflow_basic(self, runner):
-        """测试基本执行"""
         result = runner.run()
         assert result.get("success") is True
     
     def test_workflow_with_input(self, runner, tmp_path):
-        """测试带输入的执行"""
         input_file = tmp_path / "input.txt"
         input_file.write_text("测试输入")
-        
         result = runner.run(input_path=str(input_file))
         assert result.get("success") is True
 
@@ -485,7 +493,6 @@ langgraph>=0.0.20
 
     @classmethod
     def get_main_template(cls, workflow_name: str, version: str) -> str:
-        """获取主程序模板"""
         return cls.MAIN_TEMPLATE.format(
             workflow_name=workflow_name,
             version=version,
@@ -493,36 +500,11 @@ langgraph>=0.0.20
         )
     
     @classmethod
-    def get_node_handler_template(
-        cls,
-        node_id: str,
-        node_name: str,
-        node_type: str,
-        description: str,
-        inputs: list,
-        outputs: list
-    ) -> str:
-        """获取节点处理模板"""
-        inputs_str = str(inputs) if inputs else "[]"
-        outputs_str = str(outputs) if outputs else "[]"
-        
-        return cls.NODE_HANDLER_TEMPLATE.format(
-            node_id=node_id,
-            node_name=node_name,
-            node_type=node_type,
-            description=description or "无",
-            inputs_str=inputs_str,
-            outputs_str=outputs_str
-        )
-    
-    @classmethod
     def get_workflow_runner_template(cls) -> str:
-        """获取工作流运行器模板"""
         return cls.WORKFLOW_RUNNER_TEMPLATE
     
     @classmethod
     def get_tool_template(cls) -> str:
-        """获取工具模板"""
         return cls.TOOL_TEMPLATE
     
     @classmethod
@@ -531,7 +513,6 @@ langgraph>=0.0.20
         workflow_name: str,
         node_tests: str
     ) -> str:
-        """获取测试模板"""
         return cls.TEST_TEMPLATE.format(
             workflow_name=workflow_name,
             node_tests=node_tests
@@ -546,7 +527,6 @@ langgraph>=0.0.20
         edge_descriptions: str,
         version: str
     ) -> str:
-        """获取README模板"""
         return cls.README_TEMPLATE.format(
             workflow_name=workflow_name,
             description=description or "无",
@@ -558,35 +538,58 @@ langgraph>=0.0.20
     
     @classmethod
     def get_requirements_template(cls) -> str:
-        """获取requirements模板"""
         return cls.REQUIREMENTS_TEMPLATE
 
 
 # ============== 节点代码生成器 ==============
 
 class NodeCodeGenerator:
-    """节点代码生成器"""
+    """节点代码生成器 - 使用LLM生成高质量代码"""
     
-    def __init__(self, template: ProjectTemplate = None):
+    def __init__(self, llm: Optional[BaseLLM] = None, template: ProjectTemplate = None):
+        self.llm = llm
         self.template = template or ProjectTemplate()
+        self.llm_generator = LLMCodeGenerator(llm) if llm else None
     
-    def generate(self, node: NodeDefinition) -> str:
+    def generate(self, node: NodeDefinition, context: dict = None) -> str:
         """生成节点代码
         
         Args:
             node: 节点定义
+            context: 上下文（包含其他节点）
         
         Returns:
             节点代码字符串
         """
-        return self.template.get_node_handler_template(
-            node_id=node.node_id,
-            node_name=node.name,
-            node_type=node.type,
-            description=node.description,
-            inputs=node.inputs,
-            outputs=node.outputs
-        )
+        context = context or {}
+        
+        # 如果有LLM，使用LLM生成
+        if self.llm_generator:
+            try:
+                return self.llm_generator.generate_node_code(node, context)
+            except Exception as e:
+                logger.warning("llm_generation_failed_using_template", 
+                             node_id=node.node_id, error=str(e))
+        
+        # 备用模板生成
+        return self._template_generate(node)
+    
+    def _template_generate(self, node: NodeDefinition) -> str:
+        """模板生成"""
+        inputs_str = str(node.inputs) if node.inputs else "[]"
+        outputs_str = str(node.outputs) if node.outputs else "[]"
+        
+        return f'''def {node.node_id}_handler(state: WorkflowState) -> WorkflowState:
+    """
+    节点: {node.name}
+    类型: {node.type}
+    描述: {node.description or '无'}
+    """
+    # TODO: 实现{node.name}的逻辑
+    
+    result = {{"message": "{node.name}执行完成"}}
+    return {{**state, **result}}
+'''
     
     def generate_all(self, nodes: list[NodeDefinition]) -> dict[str, str]:
         """生成所有节点代码
@@ -595,23 +598,32 @@ class NodeCodeGenerator:
             nodes: 节点定义列表
         
         Returns:
-            {node_id: code} 字典
+            {{node_id: code}} 字典
         """
-        return {node.node_id: self.generate(node) for node in nodes}
+        # 构建上下文：每个节点都能看到其他节点
+        result = {}
+        for i, node in enumerate(nodes):
+            other_nodes = [n for j, n in enumerate(nodes) if j != i]
+            context = {"other_nodes": other_nodes}
+            result[node.node_id] = self.generate(node, context)
+        
+        return result
 
 
 # ============== 代码生成器 ==============
 
 class CodeGenerator:
-    """代码生成器 - 将WorkflowConfig转换为Python项目"""
+    """代码生成器 - 使用LLM将WorkflowConfig转换为Python项目"""
     
     def __init__(
         self,
+        llm: Optional[BaseLLM] = None,
         template: ProjectTemplate = None,
         node_generator: NodeCodeGenerator = None
     ):
         self.template = template or ProjectTemplate()
-        self.node_generator = node_generator or NodeCodeGenerator(self.template)
+        self.llm = llm
+        self.node_generator = node_generator or NodeCodeGenerator(llm, self.template)
     
     def generate_project(
         self,
@@ -652,7 +664,7 @@ class CodeGenerator:
         self._write_file(runner_path, runner_code)
         generated_files["workflow_runner.py"] = runner_path
         
-        # 3. 生成节点代码
+        # 3. 生成节点代码（使用LLM）
         nodes_dir = output_dir / "nodes"
         node_files = self._generate_node_files(config.nodes, nodes_dir)
         generated_files.update(node_files)
@@ -716,8 +728,12 @@ class CodeGenerator:
         """生成节点文件"""
         files = {}
         
-        for node in nodes:
-            code = self.node_generator.generate(node)
+        # 构建上下文
+        for i, node in enumerate(nodes):
+            other_nodes = [n for j, n in enumerate(nodes) if j != i]
+            context = {"other_nodes": other_nodes}
+            
+            code = self.node_generator.generate(node, context)
             path = nodes_dir / f"{node.node_id}.py"
             self._write_file(path, code)
             files[f"nodes/{node.node_id}.py"] = path
@@ -750,7 +766,6 @@ class CodeGenerator:
             f'''
     def test_node_{n.node_id}(self, runner):
         """测试{n.name}节点"""
-        # TODO: 添加{n.name}的具体测试
         pass'''
             for n in config.nodes
         ])
@@ -786,7 +801,11 @@ class CodeGenerator:
 # ============== LangGraph工作流构建器 ==============
 
 class WorkflowBuilder:
-    """LangGraph工作流构建器"""
+    """LangGraph工作流构建器 - 使用LLM构建高质量的StateGraph"""
+    
+    def __init__(self, llm: Optional[BaseLLM] = None):
+        self.llm = llm
+        self.llm_generator = LLMCodeGenerator(llm) if llm else None
     
     def build_state_graph_code(self, config: WorkflowConfig) -> str:
         """生成StateGraph构建代码
@@ -797,6 +816,79 @@ class WorkflowBuilder:
         Returns:
             LangGraph代码字符串
         """
+        # 如果有LLM，使用LLM生成更智能的代码
+        if self.llm_generator:
+            try:
+                return self._llm_build_graph_code(config)
+            except Exception as e:
+                logger.warning("llm_graph_build_failed", error=str(e))
+        
+        # 备用：使用模板生成
+        return self._template_build_graph_code(config)
+    
+    def _llm_build_graph_code(self, config: WorkflowConfig) -> str:
+        """使用LLM生成图构建代码"""
+        # 先生成所有节点函数
+        node_functions = {}
+        for node in config.nodes:
+            context = {"other_nodes": [n for n in config.nodes if n.node_id != node.node_id]}
+            try:
+                code = self.llm_generator.generate_node_code(node, context)
+                node_functions[node.node_id] = code
+            except:
+                node_functions[node.node_id] = self._default_node_function(node)
+        
+        # 构建图代码
+        prompt = f"""你是一个LangGraph专家，需要生成完整的工作流图构建代码。
+
+工作流信息：
+- 名称: {config.meta.name}
+- 节点数: {len(config.nodes)}
+- 边数: {len(config.edges)}
+
+节点列表：
+{chr(10).join([f"- {n.node_id}: {n.name} ({n.type})" for n in config.nodes])}
+
+边列表：
+{chr(10).join([f"- {e.source} -> {e.target} ({e.type})" for e in config.edges])}
+
+请生成完整的LangGraph工作流代码，包括：
+1. State定义
+2. 所有节点处理函数
+3. 图的构建（添加节点和边）
+4. 条件边处理
+
+请只输出Python代码：
+```python
+from typing import TypedDict, Annotated
+from langgraph.graph import StateGraph, END
+import operator
+
+class WorkflowState(TypedDict):
+    # 状态定义
+    pass
+
+# 节点函数...
+# 图构建...
+```
+"""
+        try:
+            response = self.llm.generate(prompt)
+            return self._extract_code(response)
+        except Exception as e:
+            logger.warning("llm_graph_code_generation_failed", error=str(e))
+            return self._template_build_graph_code(config)
+    
+    def _extract_code(self, response: str) -> str:
+        """提取代码"""
+        import re
+        match = re.search(r'```python\s*([\s\S]*?)\s*```', response)
+        if match:
+            return match.group(1).strip()
+        return response.strip()
+    
+    def _template_build_graph_code(self, config: WorkflowConfig) -> str:
+        """模板方式生成图构建代码"""
         imports = [
             "from typing import TypedDict, Annotated",
             "from langgraph.graph import StateGraph, END",
@@ -808,10 +900,10 @@ class WorkflowBuilder:
         for state_def in config.state:
             state_fields.append(f"    {state_def.field_name}: {self._python_type(state_def.type)}")
         
-        # 节点函数定义
+        # 节点函数
         node_funcs = []
         for node in config.nodes:
-            func_code = self._generate_node_function(node)
+            func_code = self._default_node_function(node)
             node_funcs.append(func_code)
         
         # 边定义
@@ -853,6 +945,20 @@ class WorkflowBuilder:
         
         return "\n".join(code_parts)
     
+    def _default_node_function(self, node: NodeDefinition) -> str:
+        """生成默认节点函数"""
+        return f'''
+def {node.node_id}_handler(state: WorkflowState) -> WorkflowState:
+    """节点: {node.name}
+    
+    类型: {node.type}
+    描述: {node.description or '无'}
+    """
+    # TODO: 实现节点逻辑
+    result = {{"message": "{node.name}执行完成"}}
+    return {{**state, **result}}
+'''
+    
     def _python_type(self, type_str: str) -> str:
         """转换类型"""
         type_map = {
@@ -865,19 +971,6 @@ class WorkflowBuilder:
             "any": "Any"
         }
         return type_map.get(type_str, "Any")
-    
-    def _generate_node_function(self, node: NodeDefinition) -> str:
-        """生成节点函数"""
-        return f'''def {node.node_id}_handler(state: WorkflowState) -> WorkflowState:
-    """节点: {node.name}
-    
-    类型: {node.type}
-    描述: {node.description or '无'}
-    """
-    # TODO: 实现节点逻辑
-    result = {{"message": "{node.name}执行完成"}}
-    return {{**state, **result}}
-'''
     
     def _generate_edges(self, edges: list[EdgeDefinition]) -> str:
         """生成边定义代码"""
@@ -896,29 +989,35 @@ class WorkflowBuilder:
 
 def generate_code(
     config: WorkflowConfig,
-    output_dir: Path
+    output_dir: Path,
+    llm: Optional[BaseLLM] = None
 ) -> dict[str, Path]:
-    """快速生成代码
+    """快速生成代码（支持LLM）
     
     Args:
         config: 工作流配置
         output_dir: 输出目录
+        llm: LLM实例（可选）
     
     Returns:
         生成的文件映射
     """
-    generator = CodeGenerator()
+    generator = CodeGenerator(llm=llm)
     return generator.generate_project(config, output_dir)
 
 
-def build_langgraph_code(config: WorkflowConfig) -> str:
-    """快速构建LangGraph代码
+def build_langgraph_code(
+    config: WorkflowConfig,
+    llm: Optional[BaseLLM] = None
+) -> str:
+    """快速构建LangGraph代码（支持LLM）
     
     Args:
         config: 工作流配置
+        llm: LLM实例（可选）
     
     Returns:
         LangGraph代码
     """
-    builder = WorkflowBuilder()
+    builder = WorkflowBuilder(llm=llm)
     return builder.build_state_graph_code(config)
