@@ -5,7 +5,6 @@
 
 import os
 import time
-from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional, Callable
 from functools import wraps
 from pdca.core.logger import get_logger
@@ -29,19 +28,13 @@ class ModelUnavailableError(LLMError):
 
 
 def retry_on_error(max_retries: int = 3, delay: float = 1.0, backoff: float = 2.0):
-    """错误重试装饰器
-    
-    Args:
-        max_retries: 最大重试次数
-        delay: 初始延迟时间（秒）
-        backoff: 延迟倍数
-    """
+    """错误重试装饰器"""
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         def wrapper(*args, **kwargs):
             current_delay = delay
             last_exception = None
-            
+
             for attempt in range(max_retries + 1):
                 try:
                     return func(*args, **kwargs)
@@ -63,71 +56,34 @@ def retry_on_error(max_retries: int = 3, delay: float = 1.0, backoff: float = 2.
                     last_exception = e
                     logger.error("llm_call_error", error=str(e), attempt=attempt + 1)
                     raise
-            
+
             raise last_exception
         return wrapper
     return decorator
 
 
-class BaseLLM(ABC):
-    """LLM基类"""
-    
+class OpenAILLM:
+    """OpenAI兼容API的LLM封装（支持Zhipu、MiniMax等）"""
+
     def __init__(
         self,
-        model: str,
+        model: str = "gpt-4",
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
-        timeout: float = 60.0
+        timeout: float = 60.0,
+        api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
     ):
         self.model = model
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.timeout = timeout
-    
-    @abstractmethod
-    def generate(self, prompt: str, **kwargs) -> str:
-        """生成文本
-        
-        Args:
-            prompt: 输入提示
-            **kwargs: 其他参数
-        
-        Returns:
-            生成的文本
-        """
-        pass
-    
-    @abstractmethod
-    def generate_messages(self, messages: list[Dict[str, str]], **kwargs) -> str:
-        """生成文本（消息格式）
-        
-        Args:
-            messages: 消息列表，格式为 [{"role": "user", "content": "..."}]
-            **kwargs: 其他参数
-        
-        Returns:
-            生成的文本
-        """
-        pass
-
-
-class OpenAILLM(BaseLLM):
-    """OpenAI LLM封装（兼容OpenAI格式的API）"""
-
-    def __init__(
-        self,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
-        **kwargs
-    ):
-        super().__init__(**kwargs)
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         self.base_url = base_url
         self._client = None
 
     @property
     def client(self):
-        """懒加载OpenAI客户端"""
         if self._client is None:
             try:
                 from openai import OpenAI
@@ -138,10 +94,10 @@ class OpenAILLM(BaseLLM):
             except ImportError:
                 raise ModelUnavailableError("请安装 openai 包: pip install openai")
         return self._client
-    
+
     @retry_on_error(max_retries=3, delay=1.0)
     def generate(self, prompt: str, **kwargs) -> str:
-        """生成文本"""
+        """生成文本（纯user消息）"""
         try:
             response = self.client.chat.completions.create(
                 model=self.model,
@@ -153,12 +109,12 @@ class OpenAILLM(BaseLLM):
         except Exception as e:
             logger.error("openai_generate_error", error=str(e))
             if "rate" in str(e).lower():
-                raise RateLimitError(f"OpenAI API限流: {e}")
-            raise LLMError(f"OpenAI生成失败: {e}")
-    
+                raise RateLimitError(f"API限流: {e}")
+            raise LLMError(f"生成失败: {e}")
+
     @retry_on_error(max_retries=3, delay=1.0)
     def generate_messages(self, messages: list[Dict[str, str]], **kwargs) -> str:
-        """生成文本（消息格式）"""
+        """生成文本（消息格式，支持system/user/assistant）"""
         try:
             response = self.client.chat.completions.create(
                 model=self.model,
@@ -170,84 +126,72 @@ class OpenAILLM(BaseLLM):
         except Exception as e:
             logger.error("openai_generate_messages_error", error=str(e))
             if "rate" in str(e).lower():
-                raise RateLimitError(f"OpenAI API限流: {e}")
-            raise LLMError(f"OpenAI生成失败: {e}")
+                raise RateLimitError(f"API限流: {e}")
+            raise LLMError(f"生成失败: {e}")
+
+
+# 向后兼容别名（Phase 3-7 完成后移除）
+BaseLLM = OpenAILLM
 
 
 class LLMManager:
-    """LLM管理器，支持多模型"""
-    
+    """LLM管理器，支持多模型注册和角色路由"""
+
     _instance = None
-    
+
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._initialized = False
         return cls._instance
-    
+
     def __init__(self):
         if self._initialized:
             return
         self._initialized = True
-        self._llms: Dict[str, BaseLLM] = {}
+        self._llms: Dict[str, OpenAILLM] = {}
         self._default_model: Optional[str] = None
-    
-    def register_llm(self, name: str, llm: BaseLLM) -> None:
-        """注册LLM实例
-        
-        Args:
-            name: LLM名称
-            llm: LLM实例
-        """
+
+    def register_llm(self, name: str, llm: OpenAILLM) -> None:
         self._llms[name] = llm
         if self._default_model is None:
             self._default_model = name
         logger.info("llm_registered", name=name, model=llm.model)
-    
-    def get_llm(self, name: Optional[str] = None) -> BaseLLM:
-        """获取LLM实例
-        
-        Args:
-            name: LLM名称，如果为None则使用默认LLM
-        
-        Returns:
-            LLM实例
-        """
+
+    def get_llm(self, name: Optional[str] = None) -> OpenAILLM:
         if name is None:
             name = self._default_model
         if name not in self._llms:
-            raise ValueError(f"未注册的LLM: {name}")
+            raise ValueError(f"未注册的LLM: {name}，已注册: {list(self._llms.keys())}")
         return self._llms[name]
-    
+
     def set_default(self, name: str) -> None:
-        """设置默认LLM"""
         if name not in self._llms:
             raise ValueError(f"未注册的LLM: {name}")
         self._default_model = name
-    
-    def generate(self, prompt: str, model_name: Optional[str] = None, **kwargs) -> str:
-        """生成文本"""
-        return self.get_llm(model_name).generate(prompt, **kwargs)
-    
-    def generate_messages(
-        self,
-        messages: list[Dict[str, str]],
-        model_name: Optional[str] = None,
-        **kwargs
-    ) -> str:
-        """生成文本（消息格式）"""
-        return self.get_llm(model_name).generate_messages(messages, **kwargs)
 
 
 # 全局LLM管理器
 _llm_manager: Optional[LLMManager] = None
 
+
 def get_llm_manager() -> LLMManager:
-    """获取全局LLM管理器"""
     global _llm_manager
     if _llm_manager is None:
         _llm_manager = LLMManager()
     return _llm_manager
+
+
+def get_llm_for_task(task: str) -> OpenAILLM:
+    """按任务角色选择模型
+
+    Planner任务(extract/config/review)用强模型，
+    Executor任务(code/test/report)用轻模型。
+    """
+    from pdca.core.prompts import PLANNER_TASKS
+    role = "planner" if task in PLANNER_TASKS else "executor"
+    return get_llm_manager().get_llm(role)
+
 
 def setup_llm(
     name: str = "default",
@@ -256,19 +200,15 @@ def setup_llm(
     api_key: Optional[str] = None,
     base_url: Optional[str] = None,
     **kwargs
-) -> BaseLLM:
+) -> OpenAILLM:
     """快速设置LLM
 
     Args:
-        name: LLM名称
-        provider: 提供商 (openai, zhipu)
+        name: LLM注册名称（如 "planner", "executor"）
+        provider: 提供商 (openai, zhipu, minimax)
         model: 模型名称
         api_key: API密钥
-        base_url: API基础URL（用于兼容OpenAI格式的API）
-        **kwargs: 其他参数
-
-    Returns:
-        LLM实例
+        base_url: API基础URL
     """
     manager = get_llm_manager()
 
@@ -277,6 +217,13 @@ def setup_llm(
             model=model,
             api_key=api_key or os.getenv("ZHIPU_API_KEY"),
             base_url=base_url or os.getenv("ZHIPU_BASE_URL", "https://open.bigmodel.cn/api/paas/v4/"),
+            **kwargs,
+        )
+    elif provider == "minimax":
+        llm = OpenAILLM(
+            model=model,
+            api_key=api_key or os.getenv("MINIMAX_API_KEY"),
+            base_url=base_url or os.getenv("MINIMAX_BASE_URL", "https://api.minimax.chat/v1"),
             **kwargs,
         )
     elif provider == "openai":

@@ -18,7 +18,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from pdca.core.llm import setup_llm, get_llm_manager
+from typing import Any
+from pdca.core.llm import setup_llm, get_llm_manager, get_llm_for_task
 from pdca.core.logger import setup_logging, get_logger, LogConfig, set_log_config
 from pdca.plan.extractor import StructuredExtractor
 from pdca.plan.config_generator import ConfigGenerator
@@ -424,13 +425,12 @@ def run_pdca_cycle(args):
     print(f"最大迭代: {args.max_iterations}")
     print(f"质量阈值: {args.quality_threshold}%")
 
-    # 初始化LLM（使用.env中的智谱API配置）
-    setup_llm(
-        name="default",
-        provider="zhipu",
-        model="glm-4.7",
-    )
-    llm = get_llm_manager().get_llm()
+    # 初始化LLM（双模型：Planner用智谱强模型，Executor用MiniMax轻模型）
+    setup_llm(name="planner", provider="zhipu", model="glm-4.7")
+    setup_llm(name="executor", provider="minimax", model="MiniMax-Text-01")
+
+    planner_llm = get_llm_for_task("extract")  # 会路由到 planner
+    executor_llm = get_llm_for_task("code")    # 会路由到 executor
 
     # 定义目标
     original_goals = [
@@ -439,9 +439,8 @@ def run_pdca_cycle(args):
         "工作流能够正常执行完成"
     ]
 
-    # 创建LLM循环控制器
+    # 创建循环控制器（纯规则判断，不调LLM）
     loop_controller = create_loop_controller(
-        llm=llm,
         max_iterations=args.max_iterations,
         quality_threshold=args.quality_threshold
     )
@@ -458,20 +457,20 @@ def run_pdca_cycle(args):
             args.input,
             args.workflow_name,
             args.verbose,
-            llm=llm
+            llm=planner_llm
         )
 
         # === DO ===
         if not args.skip_do:
             output_dir = args.output / f"iteration_{iteration}"
-            generated_files = do_phase(config, output_dir, args.verbose, llm=llm)
+            generated_files = do_phase(config, output_dir, args.verbose, llm=executor_llm)
         else:
             output_dir = args.output / f"iteration_{iteration}"
             output_dir.mkdir(parents=True, exist_ok=True)
 
         # === CHECK ===
         if not args.skip_check:
-            report = check_phase(config, output_dir, args.verbose, llm=llm)
+            report = check_phase(config, output_dir, args.verbose, llm=executor_llm)
         else:
             print("\n⏭️  跳过CHECK阶段")
             continue
@@ -483,7 +482,7 @@ def run_pdca_cycle(args):
             original_goals,
             output_dir,
             args.verbose,
-            llm=llm
+            llm=planner_llm
         )
 
         # 记录迭代
