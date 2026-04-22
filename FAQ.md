@@ -149,4 +149,193 @@ python examples/demo_run_workflow.py
 
 ---
 
+## Q: 生成的产出物（项目）如何使用？
+
+**问题**: 系统生成的项目包含 PDCA workflow 和 nodes 下的 LangGraph 流程图，这些文件是什么关系？如何使用生成的项目？
+
+**答**:
+
+生成的项目是一个**完整的、可执行的 LangGraph 工作流项目**，包含以下核心组件：
+
+### 生成的项目结构
+
+```
+examples/output/iteration_X/
+├── main.py                          # 【入口】主程序，可直接运行
+├── requirements.txt                 # 项目依赖
+├── README.md                        # 项目说明
+├── 使用指南.md                      # 详细使用文档
+│
+├── config/                          # 配置文件
+│   ├── workflow.json               # 【配置】工作流元数据
+│   └── workflow_metadata.json      # 元数据（生成时间、版本等）
+│
+├── nodes/                          # 【核心】LangGraph 工作流实现
+│   ├── __init__.py
+│   └── workflow_graph.py           # LangGraph StateGraph 定义
+│
+├── pdca/                           # 【框架】PDCA 框架代码
+│   └── do_/
+│       └── workflow_runner.py      # 工作流执行器
+│
+└── tests/                          # 测试文件
+    ├── __init__.py
+    └── test_workflow.py            # 自动生成的测试用例
+```
+
+### 两个核心组件的关系
+
+| 组件 | 文件位置 | 作用 | 关系 |
+|------|---------|------|------|
+| **PDCA Workflow** | `pdca/` 目录下的框架代码 | 整个系统的**生成流程**（Plan→Do→Check→Act） | 是**元系统**，负责生成工作流 |
+| **LangGraph 流程图** | `nodes/workflow_graph.py` | 用户想要的**具体业务工作流** | 是**生成物**，被 PDCA 系统创建 |
+
+```
+┌─────────────────────────────────────────┐
+│         PDCA 框架（元系统）               │
+│  ├─ Plan:  理解用户需求                  │
+│  ├─ Do:    生成工作流代码                │
+│  ├─ Check: 生成并运行测试                │
+│  └─ Act:   复盘优化                      │
+└────────────────┬────────────────────────┘
+                 │ 生成
+                 ▼
+┌─────────────────────────────────────────┐
+│      LangGraph 工作流（生成物）            │
+│  - nodes/workflow_graph.py              │
+│  - 定义具体的业务流程节点和边             │
+│  - 可直接运行执行业务任务                 │
+└─────────────────────────────────────────┘
+```
+
+### 如何使用生成的项目
+
+#### 1️⃣ 运行工作流（最简单）
+
+```bash
+# 进入生成的项目目录
+cd examples/output/iteration_2
+
+# 安装依赖
+pip install -r requirements.txt
+
+# 直接运行
+python main.py
+```
+
+**执行流程**：
+1. `main.py` 导入 `nodes/workflow_graph.py` 中的 LangGraph 图
+2. 初始化工作流状态
+3. 按照定义的边关系执行各个节点
+4. 输出最终结果
+
+#### 2️⃣ 运行测试
+
+```bash
+# 运行自动生成的测试用例
+pytest tests/
+
+# 查看覆盖率
+pytest --cov=nodes --cov-report=term-missing
+```
+
+#### 3️⃣ 查看和使用 LangGraph 流程图
+
+`nodes/workflow_graph.py` 包含：
+
+```python
+# 1. 定义状态（TypedDict）
+class WorkflowState(TypedDict):
+    raw_sales_data: dict
+    cleaned_data: dict
+    # ... 其他状态字段
+
+# 2. 定义节点函数
+def node_fetch_sales_data(state: WorkflowState) -> dict:
+    # 节点逻辑
+    return {"raw_sales_data": {...}}
+
+# 3. 构建状态图
+graph = StateGraph(WorkflowState)
+graph.add_node("FetchSalesData", node_fetch_sales_data)
+# ... 添加其他节点
+
+# 4. 添加边关系
+graph.add_edge("Start", "FetchSalesData")
+graph.add_conditional_edges("FetchSalesData", route_function)
+# ... 添加其他边
+
+# 5. 编译并执行
+app = graph.compile()
+result = app.invoke(initial_state)
+```
+
+#### 4️⃣ 自定义修改
+
+**修改节点逻辑**：
+```python
+# 编辑 nodes/workflow_graph.py
+def node_fetch_sales_data(state: WorkflowState) -> dict:
+    # 修改这里的逻辑
+    return {"raw_sales_data": your_custom_data}
+```
+
+**修改工作流结构**：
+```python
+# 在图中添加新节点
+graph.add_node("MyNewNode", my_new_function)
+graph.add_edge("ExistingNode", "MyNewNode")
+```
+
+### 完整使用示例
+
+```bash
+# 1. 生成新项目（从用户描述）
+python run_pdca.py --input "我要创建一个数据分析工作流..."
+
+# 2. 进入生成的项目
+cd examples/output/iteration_3
+
+# 3. 查看使用指南
+cat 使用指南.md
+
+# 4. 运行工作流
+python main.py --input data.json --output result.json
+
+# 5. 运行测试
+pytest tests/ -v
+
+# 6. 查看评估报告
+cat evaluation_report.json
+```
+
+### 常见使用场景
+
+| 场景 | 操作 |
+|------|------|
+| **快速验证想法** | 直接运行 `python main.py` |
+| **调试节点逻辑** | 在 `workflow_graph.py` 中添加断点，使用 `--verbose` 模式 |
+| **集成到现有系统** | 导入 `create_workflow_graph()` 函数，获取编译后的 app |
+| **持续优化** | 查看 `evaluation_report.json` 和 `review_result.json`，运行下一轮 PDCA |
+
+---
+
+## 生成物的生命周期
+
+```
+用户输入
+    ↓
+【Plan 阶段】理解需求 → 生成配置
+    ↓
+【Do 阶段】生成代码 → 创建项目
+    ↓
+【Check 阶段】生成测试 → 评估质量
+    ↓
+【Act 阶段】复盘优化 → 生成改进方案
+    ↓
+  (回到 Plan，持续迭代)
+```
+
+---
+
 *最后更新：2026-04-23*
