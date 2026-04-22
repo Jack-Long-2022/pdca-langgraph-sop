@@ -1,68 +1,194 @@
 # PDCA-LangGraph-SOP
 
-基于PDCA循环的LangGraph SOP交付流程系统
+基于PDCA循环的LangGraph工作流自动化生成系统。
 
-## 项目概述
+**核心价值**: 业务描述文本 → AI理解 → 自动生成可执行工作流代码 → 持续优化
 
-本系统通过语音输入→AI理解→自动生成→持续优化的闭环机制，实现从业务描述到可执行LangGraph工作流的自动化转换，并建立基于PDCA循环的持续改进机制。
+## 架构概览
 
-## 核心功能
-
-- **Plan阶段**: 语音理解、结构化抽取、配置生成
-- **Do阶段**: 代码生成、节点实现、工作流运行
-- **Check阶段**: 验收规则生成、测试执行、评估报告
-- **Act阶段**: 复盘分析、优化方案、循环控制
-
-## 安装
-
-```bash
-pip install -e .
+```
+用户输入（文本/语音）
+        ↓
+┌─── Plan ──────────────────────────┐
+│  StructuredExtractor → ConfigGen  │ ← 组件库查找复用
+└───────────────────────────────────┘
+        ↓
+┌─── Do ────────────────────────────┐
+│  CodeGenerator → Python项目文件    │
+└───────────────────────────────────┘
+        ↓
+┌─── Check ─────────────────────────┐
+│  TestCaseGenerator → 评估报告      │
+└───────────────────────────────────┘
+        ↓
+┌─── Act ───────────────────────────┐
+│  GRBARPReviewer → 优化方案         │ → 知识固化到组件库
+│  LoopController → 循环控制         │
+└───────────────────────────────────┘
 ```
 
 ## 快速开始
 
-```bash
-# 初始化系统
-python main.py --llm-model gpt-4
+### 安装
 
-# 查看帮助
-python main.py --help
+```bash
+# 克隆项目
+git clone <repo-url>
+cd pdca-langgraph-sop
+
+# 创建虚拟环境
+python -m venv .venv
+source .venv/bin/activate  # Linux/Mac
+.venv\Scripts\activate     # Windows
+
+# 安装依赖
+pip install -e ".[dev]"
 ```
+
+### 配置
+
+```bash
+# 复制环境变量模板
+cp .env.example .env
+
+# 编辑 .env，填入 API Key
+# OPENAI_API_KEY=sk-...      （OpenAI）
+# ZHIPU_API_KEY=...           （智谱）
+# MINIMAX_API_KEY=...         （MiniMax）
+```
+
+### 运行
+
+```bash
+# 完整PDCA循环（推荐）
+python run_pdca.py --input examples/input.md --output output -v
+
+# 带记忆系统的PDCA循环（跨迭代经验积累）
+python run_pdca_with_memory.py --input examples/input.md --output output
+
+# 系统初始化
+python main.py
+```
+
+### 命令行参数
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--input, -i` | 输入文件路径（必填） | - |
+| `--output, -o` | 输出目录 | `generated_workflow` |
+| `--workflow-name` | 工作流名称 | 从文件名推断 |
+| `--max-iterations` | 最大PDCA迭代次数 | 2 |
+| `--quality-threshold` | 质量阈值（通过率%） | 80.0 |
+| `--skip-do` | 跳过代码生成阶段 | false |
+| `--skip-check` | 跳过测试评估阶段 | false |
+| `--no-component-library` | 禁用组件库 | false |
 
 ## 项目结构
 
 ```
-PDCA-LangGraph-SOP/
-├── config/              # 配置文件
-├── logs/                # 日志目录
-├── pdca/                # 主包
-│   ├── core/            # 核心模块
-│   │   ├── config.py    # 配置管理
-│   │   ├── logger.py    # 日志系统
-│   │   └── llm.py       # LLM封装
-│   ├── plan/            # Plan阶段
-│   ├── do_/             # Do阶段
-│   ├── check/           # Check阶段
-│   └── act/             # Act阶段
-├── tests/               # 测试目录
-├── examples/            # 示例
-└── main.py              # 入口
+pdca-langgraph-sop/
+├── pdca/                          # 主包
+│   ├── core/                      # 核心基础设施
+│   │   ├── config.py              # Pydantic配置模型
+│   │   ├── llm.py                 # LLM封装（多提供商/双模型路由）
+│   │   ├── logger.py              # 结构化日志（structlog）
+│   │   ├── memory.py              # PDCA长期记忆系统
+│   │   ├── prompts.py             # 集中提示词管理
+│   │   ├── component_library.py   # 可复用组件库
+│   │   └── utils.py               # 工具函数
+│   ├── plan/                      # Plan阶段
+│   │   ├── extractor.py           # 结构化抽取（文本→节点/边/状态）
+│   │   └── config_generator.py    # 配置生成（抽取结果→WorkflowConfig）
+│   ├── do_/                       # Do阶段
+│   │   └── code_generator.py      # 代码生成（配置→Python项目）
+│   ├── check/                     # Check阶段
+│   │   └── evaluator.py           # 测试生成与评估
+│   └── act/                       # Act阶段
+│       ├── reviewer.py            # GRBARP复盘 + 优化方案
+│       └── loop_controller.py     # PDCA循环控制
+├── config/                        # 配置文件
+├── tests/                         # 测试
+├── examples/                      # 示例
+├── doc/                           # 设计文档
+├── run_pdca.py                    # 主入口
+├── run_pdca_with_memory.py        # 带记忆的入口
+└── main.py                        # 系统初始化
 ```
+
+## 核心特性
+
+### 1. 可复用组件库
+
+自动沉淀和管理工作流构建块：
+
+- **节点模板**: 每次 Plan 阶段生成的节点自动保存，下次创建相似工作流时优先查找复用
+- **边/状态模板**: 连接模式和状态定义跨工作流共享
+- **提示词管理**: LLM 提示词作为可复用资产统一管理
+- **知识固化**: GRRAVP 复盘自动识别成功模式并保存到组件库
+
+```python
+from pdca.core.component_library import ComponentLibrary
+
+library = ComponentLibrary()
+# 查找相似节点
+match = library.lookup_node("获取API数据", "从外部API获取数据")
+# 保存节点模板
+library.save_node(node_definition, workflow_name="my_workflow")
+```
+
+### 2. PDCA记忆系统
+
+跨迭代经验积累，持续改进：
+
+- 自动记录每次迭代的成功/失败经验
+- 下次迭代自动注入历史上下文
+- 支持关键词搜索和相关性排序
+
+### 3. 双模型路由
+
+根据任务复杂度智能路由 LLM：
+
+- **Planner 任务**（抽取/配置/复盘）→ 使用强模型（如 GLM-4）
+- **Executor 任务**（代码生成/测试）→ 使用轻量模型（如 MiniMax）
+
+### 4. GRBARP 复盘
+
+完整的 PDCA Act 阶段复盘流程：
+
+1. **Goal Review** — 目标回顾（达成/未达成/部分达成）
+2. **Result Analysis** — 结果分析（成功/失败因素）
+3. **Action Planning** — 行动规划（优化方案）
+4. **Validation Planning** — 验证规划（如何验证优化效果）
 
 ## 开发
 
 ```bash
-# 安装开发依赖
-pip install -e ".[dev]"
-
 # 运行测试
 pytest
+
+# 运行特定测试
+pytest tests/test_component_library.py -v
 
 # 代码格式化
 black pdca/
 ruff check pdca/
+
+# 带覆盖率
+pytest --cov=pdca --cov-report=term-missing
 ```
 
-## 文档
+## 依赖
 
-详细技术方案见: [PDCA_LangGraph_SOP技术方案.docx](./PDCA_LangGraph_SOP技术方案.docx)
+**核心依赖**:
+- `langgraph>=0.0.20` — 工作流编排
+- `langchain>=0.1.0` — LLM集成
+- `pydantic>=2.0` — 数据验证
+- `structlog>=24.0.0` — 结构化日志
+
+**开发依赖**:
+- `pytest>=8.0` / `black>=24.0` / `ruff>=0.1.0`
+
+## 版本
+
+- **v0.1.0** — 初始版本，核心PDCA流程实现
+- 可复用组件库、记忆系统、双模型路由、集中提示词管理

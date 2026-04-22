@@ -46,6 +46,11 @@ Thumbs.db
 # Project specific
 generated_workflow/
 examples/demo_output/
+examples/output/
+
+# PDCA runtime data
+.pdca_memory/
+.pdca_components/
 
 # Claude local settings
 .claude/settings.local.json
