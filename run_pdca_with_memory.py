@@ -21,6 +21,7 @@ import json
 from pathlib import Path
 from datetime import datetime
 from typing import Any
+import os
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -34,7 +35,7 @@ from pdca.plan.config_generator import ConfigGenerator
 from pdca.do_.code_generator import CodeGenerator
 from pdca.check.evaluator import run_evaluation
 from pdca.act.reviewer import GRBARPReviewer, OptimizationGenerator
-from pdca.act.loop_controller import create_loop_controller
+from pdca.act.loop_controller import create_loop_controller, LoopStatus
 
 
 def parse_args():
@@ -570,7 +571,7 @@ def run_pdca_cycle(args):
         # 记录迭代
         loop_controller.record_iteration(
             iteration_number=iteration,
-            status="completed",
+            status=LoopStatus.COMPLETED,
             pass_rate=report.pass_rate,
             issues_found=len(report.issues)
         )
