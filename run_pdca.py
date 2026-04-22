@@ -12,6 +12,7 @@
 
 import argparse
 import json
+import os
 from pathlib import Path
 from datetime import datetime
 from dotenv import load_dotenv
@@ -440,8 +441,8 @@ def run_pdca_cycle(args):
     print(f"质量阈值: {args.quality_threshold}%")
 
     # 初始化LLM（双模型：Planner用智谱强模型，Executor用MiniMax轻模型）
-    setup_llm(name="planner", provider="zhipu", model="glm-4.7")
-    setup_llm(name="executor", provider="minimax", model="MiniMax-Text-01")
+    setup_llm(name="planner", provider="zhipu", model=os.getenv("ZHIPU_MODEL", "glm-4.7"))
+    setup_llm(name="executor", provider="minimax", model=os.getenv("MINIMAX_MODEL", "MiniMax-Text-01"))
 
     planner_llm = get_llm_for_task("extract")  # 会路由到 planner
     executor_llm = get_llm_for_task("code")    # 会路由到 executor

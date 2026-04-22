@@ -454,8 +454,8 @@ def run_pdca_cycle(args):
     print(f"质量阈值: {args.quality_threshold}%")
 
     # 初始化LLM（双模型）
-    setup_llm(name="planner", provider="zhipu", model="glm-4.7")
-    setup_llm(name="executor", provider="minimax", model="MiniMax-Text-01")
+    setup_llm(name="planner", provider="zhipu", model=os.getenv("ZHIPU_MODEL", "glm-4.7"))
+    setup_llm(name="executor", provider="minimax", model=os.getenv("MINIMAX_MODEL", "MiniMax-Text-01"))
     planner_llm = get_llm_for_task("extract")
     executor_llm = get_llm_for_task("code")
 
