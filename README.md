@@ -94,7 +94,7 @@ pdca-langgraph-sop/
 │   │   ├── logger.py              # 结构化日志（structlog）
 │   │   ├── memory.py              # PDCA长期记忆系统
 │   │   ├── prompts.py             # 集中提示词管理
-│   │   ├── component_library.py   # 可复用组件库
+│   │   ├── component_library.py   # 可复用组件库（YAML per-type存储 + 双层匹配）
 │   │   └── utils.py               # 工具函数
 │   ├── plan/                      # Plan阶段
 │   │   ├── extractor.py           # 结构化抽取（文本→节点/边/状态）
@@ -159,6 +159,37 @@ library.save_node(node_definition, workflow_name="my_workflow")
 2. **Result Analysis** — 结果分析（成功/失败因素）
 3. **Action Planning** — 行动规划（优化方案）
 4. **Validation Planning** — 验证规划（如何验证优化效果）
+
+### 5. 双层匹配
+
+组件查找采用两级策略：
+
+1. **Tier 1（快速）**: 关键词 Jaccard 匹配，零 API 开销
+2. **Tier 2（精准）**: LLM 语义匹配回退，仅在 Tier 1 未命中且主动开启时触发
+
+```python
+# 默认仅关键词匹配
+library = ComponentLibrary(library_dir=".pdca_components")
+
+# 启用 LLM 语义回退
+library = ComponentLibrary(
+    library_dir=".pdca_components",
+    llm=planner_llm,
+    enable_llm_matching=True,
+)
+```
+
+### 6. 两个入口场景
+
+| 能力 | `run_pdca.py` | `run_pdca_with_memory.py` |
+|------|:---:|:---:|
+| PDCA 完整流程 | ✓ | ✓ |
+| 双模型路由 | ✓ | ✓ |
+| 组件库（节点/边/状态复用） | ✓ | ✓ |
+| 跨迭代经验记忆 | ✗ | ✓ |
+| Prompt 注入历史经验 | ✗ | ✓ |
+| 复盘结果自动沉淀 | ✗ | ✓ |
+| 适用场景 | 稳定场景，快速验证 | 探索阶段，迭代优化 |
 
 ## 开发
 
