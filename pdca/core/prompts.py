@@ -25,8 +25,12 @@ SYSTEM_PROMPTS = {
     ),
     "review": (
         "你是PDCA复盘专家。按GRBARP方法进行复盘："
-        "目标回顾(Goal Review)、结果分析(Result Analysis)、"
-        "行动规划(Action Planning)、验证规划(Validation Planning)。"
+        "1. 回顾目标（Goal Review）"
+        "2. 对比结果（Result Comparison）"
+        "3. 回溯过程（Process Review）"
+        "4. 分析原因（Root Cause Analysis）"
+        "5. 提炼规律（Insight Extraction）"
+        "6. 沉淀材料（Material Documentation）"
         "同时给出优化建议。输出严格的JSON。"
     ),
 }
