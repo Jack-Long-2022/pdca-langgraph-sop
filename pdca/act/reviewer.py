@@ -245,8 +245,7 @@ class OptimizationGenerator:
 
         # 知识固化：从复盘中识别并保存可复用组件到库
         if self.component_library and config:
-            reviewer = GRBARPReviewer(component_library=self.component_library)
-            discoveries = reviewer.discover_reusable_components(
+            discoveries = self.component_library.discover_reusable_components(
                 review_result, config,
                 config.meta.name if hasattr(config, 'meta') else "unknown",
             )
