@@ -2,8 +2,14 @@
 
 import argparse
 import os
+import sys
 from pathlib import Path
 from typing import Optional
+
+# Windows 控制台 UTF-8 编码支持
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
 
 from dotenv import load_dotenv
 
