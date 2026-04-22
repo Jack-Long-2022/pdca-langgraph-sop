@@ -76,7 +76,7 @@ class ValidationPlanningResult:
     feedback_mechanisms: list[str] = field(default_factory=list)
 
 
-class GRRAVPReviewResult(BaseModel):
+class GRBARPReviewResult(BaseModel):
     """GR/RAVP复盘完整结果"""
     workflow_name: str = Field(default="", description="工作流名称")
     review_date: str = Field(default="", description="复盘日期")
@@ -106,15 +106,16 @@ class OptimizationProposal(BaseModel):
 
 # ============== 复盘器（单次LLM调用完成复盘+优化） ==============
 
-class GRRAVPReviewer:
+class GRBARPReviewer:
     """GR/RAVP复盘器 — 单次LLM调用完成复盘+优化方案"""
 
-    def __init__(self, llm: Optional[Any] = None):
+    def __init__(self, llm: Optional[Any] = None, component_library: Optional[Any] = None):
         self.llm = llm
+        self.component_library = component_library
 
     def review(self, workflow_name: str, original_goals: list[str],
                evaluation_report: Any, code_generation_result: Any = None
-               ) -> GRRAVPReviewResult:
+               ) -> GRBARPReviewResult:
         """执行完整复盘（含优化建议）"""
         logger.info("review_start", workflow=workflow_name)
 
@@ -158,8 +159,8 @@ class GRRAVPReviewer:
 
         return self._rule_based_review(workflow_name, original_goals, evaluation_report)
 
-    def _parse_review_response(self, workflow_name: str, data: dict) -> GRRAVPReviewResult:
-        return GRRAVPReviewResult(
+    def _parse_review_response(self, workflow_name: str, data: dict) -> GRBARPReviewResult:
+        return GRBARPReviewResult(
             workflow_name=workflow_name,
             review_date=datetime.utcnow().isoformat() + "Z",
             phase="completed",
@@ -174,7 +175,7 @@ class GRRAVPReviewer:
 
     def _rule_based_review(self, workflow_name, original_goals, evaluation_report):
         pass_rate = getattr(evaluation_report, 'pass_rate', 0)
-        return GRRAVPReviewResult(
+        return GRBARPReviewResult(
             workflow_name=workflow_name,
             review_date=datetime.utcnow().isoformat() + "Z",
             phase="completed",
@@ -203,10 +204,15 @@ class GRRAVPReviewer:
 class OptimizationGenerator:
     """优化方案生成器 — 从复盘结果的optimizations字段提取"""
 
-    def __init__(self, llm: Optional[Any] = None):
+    def __init__(self, llm: Optional[Any] = None, component_library: Optional[Any] = None):
         self.llm = llm
+        self.component_library = component_library
 
-    def generate_from_review(self, review_result: GRRAVPReviewResult) -> list[OptimizationProposal]:
+    def generate_from_review(
+        self,
+        review_result: GRBARPReviewResult,
+        config: Optional[Any] = None,
+    ) -> list[OptimizationProposal]:
         """从复盘结果生成优化方案（已在单次LLM调用中完成）"""
         # LLM已在review中生成优化建议，提取即可
         proposals = []
@@ -236,6 +242,15 @@ class OptimizationGenerator:
                     priority="high",
                     implementation_steps=["分析原因", "制定计划", "实施", "验证"],
                 ))
+
+        # 知识固化：从复盘中识别并保存可复用组件到库
+        if self.component_library and config:
+            reviewer = GRBARPReviewer(component_library=self.component_library)
+            discoveries = reviewer.discover_reusable_components(
+                review_result, config,
+                config.meta.name if hasattr(config, 'meta') else "unknown",
+            )
+            logger.info("reusable_components_solidified", count=len(discoveries))
 
         return proposals
 
@@ -276,21 +291,26 @@ class ChangeApplicator:
 
 # ============== 便捷函数 ==============
 
-def run_grravp_review(
+def run_GRBARP_review(
     workflow_name: str,
     original_goals: list[str],
     evaluation_report: Any,
-    llm: Any = None
-) -> GRRAVPReviewResult:
+    llm: Any = None,
+    component_library: Any = None,
+) -> GRBARPReviewResult:
     """快速执行GR/RAVP复盘"""
-    return GRRAVPReviewer(llm).review(workflow_name, original_goals, evaluation_report)
+    return GRBARPReviewer(llm, component_library=component_library).review(
+        workflow_name, original_goals, evaluation_report
+    )
 
 
 def generate_optimizations(
-    review_result: GRRAVPReviewResult,
-    llm: Any = None
+    review_result: GRBARPReviewResult,
+    llm: Any = None,
+    config: Any = None,
+    component_library: Any = None,
 ) -> list[OptimizationProposal]:
     """从复盘结果生成优化方案"""
-    generator = OptimizationGenerator(llm)
-    proposals = generator.generate_from_review(review_result)
+    generator = OptimizationGenerator(llm, component_library=component_library)
+    proposals = generator.generate_from_review(review_result, config=config)
     return generator.prioritize_proposals(proposals)

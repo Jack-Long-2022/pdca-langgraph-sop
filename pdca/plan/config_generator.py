@@ -176,8 +176,10 @@ def _merge_llm_config(base: WorkflowConfig, llm_data: dict) -> WorkflowConfig:
 class ConfigGenerator:
     """配置生成器 — 单次LLM调用完成优化+配置"""
 
-    def __init__(self, config_template: Optional[dict[str, Any]] = None):
+    def __init__(self, config_template: Optional[dict[str, Any]] = None,
+                 component_library: Optional[Any] = None):
         self.config_template = config_template or {}
+        self.component_library = component_library
 
     def generate(
         self,
@@ -196,10 +198,17 @@ class ConfigGenerator:
         llm: Optional[OpenAILLM] = None,
         workflow_name: Optional[str] = None,
     ) -> WorkflowConfig:
-        """基础转换 + 单次LLM优化"""
+        """基础转换 + 组件库增强 + 单次LLM优化"""
         config = self.generate(document, workflow_name)
 
+        # 组件库增强：用库中已有模板填充空字段
+        if self.component_library:
+            config = self._enhance_with_library(config, workflow_name or "unknown")
+
         if llm is None:
+            # LLM 不可用时，仍保存组件到库
+            if self.component_library:
+                self.component_library.save_workflow_config(config, workflow_name or "unknown")
             return config
 
         logger.info("optimizing_config_with_llm")
@@ -223,6 +232,40 @@ class ConfigGenerator:
                 logger.info("config_optimized_with_llm")
         except Exception as e:
             logger.warning("config_optimization_failed", error=str(e))
+
+        # 保存组件到库
+        if self.component_library:
+            self.component_library.save_workflow_config(config, workflow_name or "unknown")
+
+        return config
+
+    def _enhance_with_library(self, config: WorkflowConfig, workflow_name: str) -> WorkflowConfig:
+        """用组件库中已有模板增强配置（仅填充空字段，不覆盖已有数据）"""
+        for node in config.nodes:
+            match = self.component_library.lookup_node(
+                node.name, node.description or "", node_type=node.type
+            )
+            if match:
+                if not node.description and match.description:
+                    node.description = match.description
+                if not node.inputs and match.inputs:
+                    node.inputs = match.inputs
+                if not node.outputs and match.outputs:
+                    node.outputs = match.outputs
+                if match.config:
+                    for k, v in match.config.items():
+                        if k not in node.config:
+                            node.config[k] = v
+                logger.info("node_enhanced_from_library",
+                           node=node.name, template=match.template_id)
+
+        for state in config.state:
+            match = self.component_library.lookup_state(state.field_name, state.type)
+            if match:
+                if not state.description and match.description:
+                    state.description = match.description
+                logger.info("state_enhanced_from_library",
+                           state=state.field_name, template=match.template_id)
 
         return config
 

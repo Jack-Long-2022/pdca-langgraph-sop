@@ -24,7 +24,7 @@ SYSTEM_PROMPTS = {
         "包含通过率、问题列表和改进建议。输出严格的JSON。"
     ),
     "review": (
-        "你是PDCA复盘专家。按GRRAVP方法进行复盘："
+        "你是PDCA复盘专家。按GRBARP方法进行复盘："
         "目标回顾(Goal Review)、结果分析(Result Analysis)、"
         "行动规划(Action Planning)、验证规划(Validation Planning)。"
         "同时给出优化建议。输出严格的JSON。"
@@ -217,7 +217,7 @@ REPORT_PROMPT = """分析以下测试结果，生成评估报告。
     "root_cause_analysis": "根因分析"
 }}"""
 
-REVIEW_PROMPT = """对以下工作流进行PDCA复盘（GRRAVP方法）。
+REVIEW_PROMPT = """对以下工作流进行PDCA复盘（GRBARP方法）。
 
 工作流名称: {workflow_name}
 
@@ -283,3 +283,51 @@ MEMORY_CONTEXT_TEMPLATE = """
 ### 优化方案参考
 {verified_optimizations}
 """
+
+COMPONENT_DISCOVERY_PROMPT = """分析以下工作流配置和复盘结果，识别可复用的组件模式。
+
+工作流名称: {workflow_name}
+
+节点列表：
+{nodes}
+
+成功因素：
+{success_factors}
+
+失败教训：
+{failure_factors}
+
+请识别以下可复用模式：
+1. 通用节点模式（可在多个工作流中复用的节点）
+2. 常见状态定义（多工作流共享的状态字段）
+3. 最佳实践提示模式
+
+以JSON格式输出：
+{{
+    "reusable_nodes": [
+        {{
+            "name": "节点模式名称",
+            "type": "tool|thought|control",
+            "description": "通用描述",
+            "inputs": ["输入列表"],
+            "outputs": ["输出列表"],
+            "reason": "为什么可复用"
+        }}
+    ],
+    "reusable_states": [
+        {{
+            "field_name": "字段名",
+            "type": "类型",
+            "description": "描述",
+            "reason": "为什么可复用"
+        }}
+    ],
+    "reusable_prompts": [
+        {{
+            "task_type": "extract|config|code",
+            "name": "提示名称",
+            "content": "提示内容",
+            "reason": "为什么可复用"
+        }}
+    ]
+}}"""

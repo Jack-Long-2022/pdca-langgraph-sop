@@ -25,8 +25,9 @@ from pdca.plan.extractor import StructuredExtractor
 from pdca.plan.config_generator import ConfigGenerator
 from pdca.do_.code_generator import CodeGenerator
 from pdca.check.evaluator import run_evaluation
-from pdca.act.reviewer import GRRAVPReviewer, OptimizationGenerator
+from pdca.act.reviewer import GRBARPReviewer, OptimizationGenerator
 from pdca.act.loop_controller import create_loop_controller
+from pdca.core.component_library import ComponentLibrary
 
 
 def parse_args():
@@ -78,11 +79,23 @@ def parse_args():
         action="store_true",
         help="详细输出"
     )
+    parser.add_argument(
+        "--component-library-dir",
+        type=Path,
+        default=Path(".pdca_components"),
+        help="组件库存储目录"
+    )
+    parser.add_argument(
+        "--no-component-library",
+        action="store_true",
+        help="禁用组件库"
+    )
 
     return parser.parse_args()
 
 
-def plan_phase(input_file: Path, workflow_name: str = None, verbose: bool = False, llm: Any = None):
+def plan_phase(input_file: Path, workflow_name: str = None, verbose: bool = False, llm: Any = None,
+               component_library: Any = None):
     """Plan阶段：从输入文本生成工作流配置
 
     步骤：
@@ -130,7 +143,7 @@ def plan_phase(input_file: Path, workflow_name: str = None, verbose: bool = Fals
 
     # 3. 使用LLM生成工作流配置
     print(f"\n[Config] 使用LLM生成工作流配置...")
-    generator = ConfigGenerator()
+    generator = ConfigGenerator(component_library=component_library)
 
     # 使用LLM细化生成
     config = generator.generate_with_refinement(
@@ -307,7 +320,8 @@ def check_phase(config, output_dir: Path, verbose: bool = False, llm: Any = None
     return report
 
 
-def act_phase(config, report, original_goals, output_dir: Path, verbose: bool = False, llm: Any = None):
+def act_phase(config, report, original_goals, output_dir: Path, verbose: bool = False, llm: Any = None,
+              component_library: Any = None):
     """Act阶段：复盘分析并生成优化方案
 
     步骤：
@@ -324,7 +338,7 @@ def act_phase(config, report, original_goals, output_dir: Path, verbose: bool = 
         llm: LLM实例
 
     Returns:
-        (GRRAVPReviewResult, list[OptimizationProposal])
+        (GRBARPReviewResult, list[OptimizationProposal])
     """
     logger = get_logger(__name__)
     print("\n" + "="*60)
@@ -333,7 +347,7 @@ def act_phase(config, report, original_goals, output_dir: Path, verbose: bool = 
 
     # 使用LLM执行复盘
     print(f"\n[Review] 使用LLM执行GR/RAVP复盘...")
-    reviewer = GRRAVPReviewer(llm=llm)
+    reviewer = GRBARPReviewer(llm=llm, component_library=component_library)
 
     review_result = reviewer.review(
         workflow_name=config.meta.name,
@@ -369,8 +383,8 @@ def act_phase(config, report, original_goals, output_dir: Path, verbose: bool = 
 
     # 使用LLM生成优化方案
     print(f"\n[Suggestion] 使用LLM生成优化方案...")
-    opt_generator = OptimizationGenerator(llm=llm)
-    proposals = opt_generator.generate_from_review(review_result)
+    opt_generator = OptimizationGenerator(llm=llm, component_library=component_library)
+    proposals = opt_generator.generate_from_review(review_result, config=config)
     proposals = opt_generator.prioritize_proposals(proposals)
 
     print(f"   [OK] 生成了 {len(proposals)} 个优化方案:")
@@ -432,6 +446,13 @@ def run_pdca_cycle(args):
     planner_llm = get_llm_for_task("extract")  # 会路由到 planner
     executor_llm = get_llm_for_task("code")    # 会路由到 executor
 
+    # 初始化组件库
+    component_library = None
+    if not args.no_component_library:
+        component_library = ComponentLibrary(library_dir=str(args.component_library_dir))
+        stats = component_library.get_statistics()
+        print(f"\n[Library] 组件库初始化: {stats['total_templates']} 个模板")
+
     # 定义目标
     original_goals = [
         "成功生成可运行的工作流代码",
@@ -457,7 +478,8 @@ def run_pdca_cycle(args):
             args.input,
             args.workflow_name,
             args.verbose,
-            llm=planner_llm
+            llm=planner_llm,
+            component_library=component_library,
         )
 
         # === DO ===
@@ -482,7 +504,8 @@ def run_pdca_cycle(args):
             original_goals,
             output_dir,
             args.verbose,
-            llm=planner_llm
+            llm=planner_llm,
+            component_library=component_library,
         )
 
         # 记录迭代

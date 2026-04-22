@@ -1,0 +1,733 @@
+"""PDCA 可复用组件库
+
+将工作流中的节点、边、状态和提示词沉淀为可复用模板：
+- 每次生成工作流后自动保存组件模板
+- 新建工作流时查找已有模板进行复用
+- 在 GRRAVP 复盘中识别并固化可复用知识
+
+使用方法：
+    from pdca.core.component_library import ComponentLibrary
+
+    library = ComponentLibrary(library_dir=".pdca_components")
+    # 查找相似节点
+    match = library.lookup_node("获取API数据", "从外部API获取数据")
+    # 保存新节点
+    library.save_node(node_definition, workflow_name="my_workflow")
+"""
+
+import json
+import re
+import hashlib
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+from datetime import datetime
+from pydantic import BaseModel, Field
+
+from pdca.core.logger import get_logger
+
+logger = get_logger(__name__)
+
+
+# ============== 数据模型 ==============
+
+class NodeTemplate(BaseModel):
+    """节点模板"""
+    template_id: str = Field(..., description="模板唯一标识")
+    name: str = Field(..., description="节点名称")
+    name_keywords: list[str] = Field(default_factory=list, description="名称关键词（用于匹配）")
+    type: str = Field(..., description="节点类型: tool/thought/control")
+    description: str = Field(default="", description="节点功能描述")
+    inputs: list[str] = Field(default_factory=list, description="输入参数")
+    outputs: list[str] = Field(default_factory=list, description="输出参数")
+    config: Dict[str, Any] = Field(default_factory=dict, description="节点配置")
+    source_workflow: str = Field(default="", description="来源工作流")
+    usage_count: int = Field(default=0, description="复用次数")
+    last_used: str = Field(default="", description="最后使用时间")
+    created_at: str = Field(default="", description="创建时间")
+
+
+class EdgeTemplate(BaseModel):
+    """边模板"""
+    template_id: str = Field(..., description="模板唯一标识")
+    source_type: str = Field(..., description="源节点类型关键词")
+    target_type: str = Field(..., description="目标节点类型关键词")
+    edge_type: str = Field(default="sequential", description="边类型")
+    condition: Optional[str] = Field(default=None, description="条件表达式")
+    description: str = Field(default="", description="边描述")
+    source_workflow: str = Field(default="", description="来源工作流")
+    usage_count: int = Field(default=0, description="复用次数")
+    last_used: str = Field(default="", description="最后使用时间")
+    created_at: str = Field(default="", description="创建时间")
+
+
+class StateTemplate(BaseModel):
+    """状态模板"""
+    template_id: str = Field(..., description="模板唯一标识")
+    field_name: str = Field(..., description="字段名称")
+    name_keywords: list[str] = Field(default_factory=list, description="名称关键词")
+    type: str = Field(..., description="字段类型")
+    default_value: Any = Field(default=None, description="默认值")
+    description: str = Field(default="", description="字段描述")
+    required: bool = Field(default=False, description="是否必填")
+    source_workflow: str = Field(default="", description="来源工作流")
+    usage_count: int = Field(default=0, description="复用次数")
+    last_used: str = Field(default="", description="最后使用时间")
+    created_at: str = Field(default="", description="创建时间")
+
+
+class PromptTemplate(BaseModel):
+    """提示词模板"""
+    template_id: str = Field(..., description="模板唯一标识")
+    task_type: str = Field(..., description="任务类型: extract/config/code/test/report/review")
+    name: str = Field(..., description="提示词名称")
+    content: str = Field(default="", description="提示词内容")
+    name_keywords: list[str] = Field(default_factory=list, description="名称关键词")
+    source_workflow: str = Field(default="", description="来源工作流")
+    usage_count: int = Field(default=0, description="复用次数")
+    last_used: str = Field(default="", description="最后使用时间")
+    created_at: str = Field(default="", description="创建时间")
+
+
+class ComponentLibraryIndex(BaseModel):
+    """组件库索引 — 持久化为 JSON"""
+    nodes: Dict[str, NodeTemplate] = Field(default_factory=dict)
+    edges: Dict[str, EdgeTemplate] = Field(default_factory=dict)
+    states: Dict[str, StateTemplate] = Field(default_factory=dict)
+    prompts: Dict[str, PromptTemplate] = Field(default_factory=dict)
+    saved_at: str = Field(default="")
+
+
+# ============== 关键词工具 ==============
+
+# 常见中文停用词
+_STOP_WORDS = {
+    "的", "了", "在", "是", "我", "有", "和", "就", "不", "人", "都",
+    "一", "一个", "上", "也", "很", "到", "说", "要", "去", "你", "会",
+    "着", "没有", "看", "好", "自己", "这", "那", "他", "她", "它",
+    "被", "从", "把", "对", "与", "而", "但", "如", "或", "等",
+    # 英文停用词
+    "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
+    "have", "has", "had", "do", "does", "did", "will", "would", "could",
+    "should", "may", "might", "can", "shall", "to", "of", "in", "for",
+    "on", "with", "at", "by", "from", "as", "into", "through", "during",
+    "before", "after", "above", "below", "and", "or", "not", "but",
+}
+
+
+def _extract_keywords(text: str) -> list[str]:
+    """从文本中提取关键词（中英文混合处理）
+
+    策略：
+    1. 提取所有英文单词（长度>=2）
+    2. 提取中文连续字符段，按常见连接词拆分为2-4字词组
+    3. 过滤停用词
+    """
+    if not text:
+        return []
+
+    text = text.lower().strip()
+    keywords = []
+
+    # 1. 提取英文单词
+    english_words = re.findall(r'[a-z][a-z0-9_]+', text)
+    for word in english_words:
+        if word not in _STOP_WORDS:
+            keywords.append(word)
+
+    # 2. 提取中文片段，按连接词和标点拆分
+    # 先用英文/数字/标点将文本分割为纯中文片段
+    chinese_segments = re.findall(r'[\u4e00-\u9fff]+', text)
+
+    # 常见中文连接词（用于拆分长中文片段）
+    connective_pattern = re.compile(r'[的得了在是与而又但或如果虽然]')
+
+    for segment in chinese_segments:
+        # 按连接词拆分
+        sub_parts = connective_pattern.split(segment)
+        for part in sub_parts:
+            part = part.strip()
+            if len(part) >= 2 and part not in _STOP_WORDS:
+                # 对于较长的片段，提取2字窗口
+                if len(part) <= 4:
+                    keywords.append(part)
+                else:
+                    # 滑动窗口提取2字词
+                    for i in range(len(part) - 1):
+                        bigram = part[i:i+2]
+                        if bigram not in _STOP_WORDS:
+                            keywords.append(bigram)
+            elif len(part) == 1 and part not in _STOP_WORDS:
+                keywords.append(part)
+
+    return keywords
+
+
+def _keyword_match_score(query_keywords: list[str], template_keywords: list[str]) -> float:
+    """关键词匹配评分 (Jaccard 风格)
+
+    返回 0.0~1.0 的匹配分数
+    """
+    if not query_keywords:
+        return 0.0
+
+    query_set = set(kw.lower() for kw in query_keywords)
+    template_set = set(kw.lower() for kw in template_keywords)
+
+    if not template_set:
+        return 0.0
+
+    overlap = query_set & template_set
+    return len(overlap) / len(query_set)
+
+
+# ============== 核心组件库 ==============
+
+class ComponentLibrary:
+    """可复用组件库
+
+    功能：
+    1. 积累：工作流生成后自动保存组件模板
+    2. 检索：新建工作流时查找相似已有组件
+    3. 固化：从 GRRAVP 复盘中识别可复用知识
+
+    持久化目录结构（与 .pdca_memory/ 模式一致）：
+        .pdca_components/
+            index.json          # 所有模板
+    """
+
+    def __init__(self, library_dir: str = ".pdca_components"):
+        self.library_dir = Path(library_dir)
+        self.library_dir.mkdir(parents=True, exist_ok=True)
+        self.index_file = self.library_dir / "index.json"
+        self._load_index()
+
+    def _load_index(self):
+        """从磁盘加载索引"""
+        if self.index_file.exists():
+            with open(self.index_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                self._index = ComponentLibraryIndex(**data)
+        else:
+            self._index = ComponentLibraryIndex()
+
+    def _save_index(self):
+        """保存索引到磁盘"""
+        self._index.saved_at = datetime.now().isoformat()
+        with open(self.index_file, 'w', encoding='utf-8') as f:
+            json.dump(self._index.model_dump(), f, ensure_ascii=False, indent=2)
+
+    def _generate_id(self, prefix: str, name: str) -> str:
+        """生成模板ID（与 memory.py 的 _generate_memory_id 模式一致）"""
+        hash_input = f"{prefix}_{name}_{datetime.now().isoformat()}"
+        return hashlib.md5(hash_input.encode()).hexdigest()[:12]
+
+    # ============== 查找方法 ==============
+
+    def lookup_node(
+        self,
+        name: str,
+        description: str = "",
+        node_type: Optional[str] = None,
+        threshold: float = 0.3,
+    ) -> Optional[NodeTemplate]:
+        """查找相似节点模板
+
+        Args:
+            name: 节点名称
+            description: 节点描述
+            node_type: 可选，节点类型过滤
+            threshold: 最低匹配阈值
+
+        Returns:
+            最佳匹配的 NodeTemplate，无匹配返回 None
+        """
+        query_keywords = _extract_keywords(f"{name} {description}")
+
+        if not query_keywords:
+            return None
+
+        candidates = list(self._index.nodes.values())
+
+        if node_type:
+            candidates = [n for n in candidates if n.type == node_type]
+
+        best_match = None
+        best_score = 0.0
+
+        for template in candidates:
+            score = _keyword_match_score(query_keywords, template.name_keywords)
+            # 类型匹配加分
+            if node_type and template.type == node_type:
+                score += 0.1
+            if score > best_score:
+                best_score = score
+                best_match = template
+
+        if best_match and best_score >= threshold:
+            best_match.usage_count += 1
+            best_match.last_used = datetime.now().isoformat()
+            self._save_index()
+            logger.info("node_template_matched",
+                       template=best_match.name, score=best_score,
+                       query=name)
+            return best_match
+
+        return None
+
+    def lookup_edge(
+        self,
+        source_name: str,
+        target_name: str,
+        edge_type: Optional[str] = None,
+    ) -> Optional[EdgeTemplate]:
+        """查找相似边模板"""
+        source_keywords = _extract_keywords(source_name)
+        target_keywords = _extract_keywords(target_name)
+
+        best_match = None
+        best_score = 0.0
+
+        for template in self._index.edges.values():
+            if edge_type and template.edge_type != edge_type:
+                continue
+
+            source_score = _keyword_match_score(source_keywords, _extract_keywords(template.source_type))
+            target_score = _keyword_match_score(target_keywords, _extract_keywords(template.target_type))
+            score = (source_score + target_score) / 2
+
+            if score > best_score:
+                best_score = score
+                best_match = template
+
+        if best_match and best_score >= 0.3:
+            best_match.usage_count += 1
+            best_match.last_used = datetime.now().isoformat()
+            self._save_index()
+            return best_match
+
+        return None
+
+    def lookup_state(
+        self,
+        field_name: str,
+        field_type: Optional[str] = None,
+    ) -> Optional[StateTemplate]:
+        """查找相似状态模板"""
+        query_keywords = _extract_keywords(field_name)
+
+        best_match = None
+        best_score = 0.0
+
+        for template in self._index.states.values():
+            if field_type and template.type != field_type:
+                continue
+
+            score = _keyword_match_score(query_keywords, template.name_keywords)
+            # 精确名称匹配额外加分
+            if template.field_name.lower() == field_name.lower():
+                score += 0.5
+
+            if score > best_score:
+                best_score = score
+                best_match = template
+
+        if best_match and best_score >= 0.4:
+            best_match.usage_count += 1
+            best_match.last_used = datetime.now().isoformat()
+            self._save_index()
+            return best_match
+
+        return None
+
+    def lookup_prompt(
+        self,
+        task_type: str,
+        name: str = "",
+    ) -> Optional[PromptTemplate]:
+        """查找相似提示词模板"""
+        query_keywords = _extract_keywords(name)
+
+        best_match = None
+        best_score = 0.0
+
+        for template in self._index.prompts.values():
+            if template.task_type != task_type:
+                continue
+
+            score = _keyword_match_score(query_keywords, template.name_keywords)
+            if score > best_score:
+                best_score = score
+                best_match = template
+
+        if best_match and best_score >= 0.3:
+            best_match.usage_count += 1
+            best_match.last_used = datetime.now().isoformat()
+            self._save_index()
+            return best_match
+
+        return None
+
+    # ============== 保存方法 ==============
+
+    def save_node(self, node: Any, workflow_name: str = "") -> NodeTemplate:
+        """保存节点模板
+
+        Args:
+            node: NodeDefinition 或 ExtractedNode 实例
+            workflow_name: 来源工作流名称
+
+        Returns:
+            保存的 NodeTemplate
+        """
+        name = getattr(node, 'name', str(node))
+        template_id = self._generate_id("node", name)
+        description = getattr(node, 'description', '') or ""
+
+        # 检查是否已存在相同名称的模板
+        for existing in self._index.nodes.values():
+            if existing.name == name and existing.type == getattr(node, 'type', 'tool'):
+                # 更新已有模板的使用信息
+                existing.usage_count += 1
+                existing.last_used = datetime.now().isoformat()
+                existing.source_workflow = workflow_name
+                self._save_index()
+                logger.info("node_template_updated", name=name)
+                return existing
+
+        template = NodeTemplate(
+            template_id=template_id,
+            name=name,
+            name_keywords=_extract_keywords(f"{name} {description}"),
+            type=getattr(node, 'type', 'tool'),
+            description=description,
+            inputs=getattr(node, 'inputs', []),
+            outputs=getattr(node, 'outputs', []),
+            config=getattr(node, 'config', {}),
+            source_workflow=workflow_name,
+            created_at=datetime.now().isoformat(),
+        )
+
+        self._index.nodes[template_id] = template
+        self._save_index()
+        logger.info("node_template_saved", name=name, template_id=template_id)
+        return template
+
+    def save_edge(
+        self,
+        edge: Any,
+        source_name: str = "",
+        target_name: str = "",
+        workflow_name: str = "",
+    ) -> EdgeTemplate:
+        """保存边模板"""
+        source = getattr(edge, 'source', source_name)
+        target = getattr(edge, 'target', target_name)
+        template_id = self._generate_id("edge", f"{source}_{target}")
+
+        # 检查是否已存在
+        for existing in self._index.edges.values():
+            if (existing.source_type == source and existing.target_type == target
+                    and existing.edge_type == getattr(edge, 'type', 'sequential')):
+                existing.usage_count += 1
+                existing.last_used = datetime.now().isoformat()
+                self._save_index()
+                return existing
+
+        template = EdgeTemplate(
+            template_id=template_id,
+            source_type=source_name or source,
+            target_type=target_name or target,
+            edge_type=getattr(edge, 'type', 'sequential'),
+            condition=getattr(edge, 'condition', None),
+            description=f"{source} -> {target}",
+            source_workflow=workflow_name,
+            created_at=datetime.now().isoformat(),
+        )
+
+        self._index.edges[template_id] = template
+        self._save_index()
+        logger.info("edge_template_saved", source=source, target=target)
+        return template
+
+    def save_state(self, state: Any, workflow_name: str = "") -> StateTemplate:
+        """保存状态模板"""
+        field_name = getattr(state, 'field_name', str(state))
+        template_id = self._generate_id("state", field_name)
+
+        # 检查是否已存在
+        for existing in self._index.states.values():
+            if existing.field_name == field_name:
+                existing.usage_count += 1
+                existing.last_used = datetime.now().isoformat()
+                self._save_index()
+                return existing
+
+        description = getattr(state, 'description', '') or ""
+        template = StateTemplate(
+            template_id=template_id,
+            field_name=field_name,
+            name_keywords=_extract_keywords(f"{field_name} {description}"),
+            type=getattr(state, 'type', 'string'),
+            default_value=getattr(state, 'default_value', None),
+            description=description,
+            required=getattr(state, 'required', False),
+            source_workflow=workflow_name,
+            created_at=datetime.now().isoformat(),
+        )
+
+        self._index.states[template_id] = template
+        self._save_index()
+        logger.info("state_template_saved", field_name=field_name)
+        return template
+
+    def save_prompt(
+        self,
+        task_type: str,
+        name: str,
+        content: str,
+        workflow_name: str = "",
+    ) -> PromptTemplate:
+        """保存提示词模板"""
+        template_id = self._generate_id("prompt", name)
+
+        # 检查是否已存在
+        for existing in self._index.prompts.values():
+            if existing.name == name and existing.task_type == task_type:
+                existing.content = content
+                existing.usage_count += 1
+                existing.last_used = datetime.now().isoformat()
+                self._save_index()
+                return existing
+
+        template = PromptTemplate(
+            template_id=template_id,
+            task_type=task_type,
+            name=name,
+            content=content,
+            name_keywords=_extract_keywords(name),
+            source_workflow=workflow_name,
+            created_at=datetime.now().isoformat(),
+        )
+
+        self._index.prompts[template_id] = template
+        self._save_index()
+        logger.info("prompt_template_saved", name=name, task_type=task_type)
+        return template
+
+    # ============== 批量操作 ==============
+
+    def save_workflow_config(self, config: Any, workflow_name: str = ""):
+        """从 WorkflowConfig 保存所有组件模板
+
+        Args:
+            config: WorkflowConfig 实例
+            workflow_name: 工作流名称
+        """
+        workflow_name = workflow_name or getattr(config, 'meta', None) and config.meta.name or "unknown"
+        nodes = getattr(config, 'nodes', [])
+        edges = getattr(config, 'edges', [])
+        states = getattr(config, 'state', [])
+
+        # 建立节点ID→名称映射（用于边的 source/target）
+        node_id_to_name = {n.node_id: n.name for n in nodes if hasattr(n, 'node_id')}
+
+        saved_counts = {"nodes": 0, "edges": 0, "states": 0}
+
+        for node in nodes:
+            self.save_node(node, workflow_name)
+            saved_counts["nodes"] += 1
+
+        for edge in edges:
+            source_name = node_id_to_name.get(getattr(edge, 'source', ''), '')
+            target_name = node_id_to_name.get(getattr(edge, 'target', ''), '')
+            self.save_edge(edge, source_name, target_name, workflow_name)
+            saved_counts["edges"] += 1
+
+        for state in states:
+            self.save_state(state, workflow_name)
+            saved_counts["states"] += 1
+
+        logger.info("workflow_config_saved_to_library",
+                    workflow=workflow_name,
+                    **saved_counts)
+
+    def discover_reusable_components(
+        self,
+        review_result: Any,
+        config: Any,
+        workflow_name: str = "",
+    ) -> list[dict]:
+        """从 GRRAVP 复盘结果中识别可复用组件（知识固化）
+
+        分析策略：
+        1. 成功因素中提到的节点 → 值得复用
+        2. 必需状态字段 → 通用状态模式
+        3. 高优先级优化建议 → 提示词/方法模式
+
+        Args:
+            review_result: GRBARPReviewResult 实例
+            config: WorkflowConfig 实例
+            workflow_name: 工作流名称
+
+        Returns:
+            发现列表: [{"category": "node|state|prompt", "name": "...", "reason": "..."}]
+        """
+        discoveries = []
+        workflow_name = workflow_name or getattr(config, 'meta', None) and config.meta.name or "unknown"
+
+        # 1. 从成功因素中识别节点模式
+        result_analysis = getattr(review_result, 'result_analysis', {})
+        if isinstance(result_analysis, dict):
+            success_factors = result_analysis.get("success_factors", [])
+            nodes = getattr(config, 'nodes', [])
+
+            for node in nodes:
+                node_name = getattr(node, 'name', '')
+                node_desc = getattr(node, 'description', '') or ''
+
+                for factor in success_factors:
+                    if (node_name and node_name.lower() in factor.lower()) or \
+                       (node_desc and node_desc.lower() in factor.lower()):
+                        discoveries.append({
+                            "category": "node",
+                            "name": node_name,
+                            "reason": f"成功因素中识别到: {factor[:80]}",
+                            "component": node,
+                        })
+                        break
+
+        # 2. 识别必需状态模式
+        states = getattr(config, 'state', [])
+        for state in states:
+            if getattr(state, 'required', False):
+                field_name = getattr(state, 'field_name', '')
+                discoveries.append({
+                    "category": "state",
+                    "name": field_name,
+                    "reason": "必需状态，在多个工作流中常见",
+                    "component": state,
+                })
+
+        # 3. 从高优先级优化中提取提示模式
+        action_planning = getattr(review_result, 'action_planning', {})
+        if isinstance(action_planning, dict):
+            actions = action_planning.get("actions", [])
+            for action in actions:
+                if isinstance(action, dict) and action.get("priority") == "high":
+                    action_text = action.get("action", "")
+                    discoveries.append({
+                        "category": "prompt",
+                        "name": f"optimization_{action_text[:30]}",
+                        "reason": f"高优先级优化: {action_text[:80]}",
+                        "content": str(action),
+                    })
+
+        # 将发现的组件保存到库中
+        for d in discoveries:
+            if d["category"] == "node" and "component" in d:
+                self.save_node(d["component"], workflow_name)
+            elif d["category"] == "state" and "component" in d:
+                self.save_state(d["component"], workflow_name)
+            elif d["category"] == "prompt" and "content" in d:
+                self.save_prompt("review_discovery", d["name"], d["content"], workflow_name)
+
+        logger.info("reusable_components_discovered",
+                    workflow=workflow_name,
+                    count=len(discoveries))
+
+        return discoveries
+
+    # ============== 统计与维护 ==============
+
+    def get_statistics(self) -> dict:
+        """获取组件库统计信息"""
+        return {
+            "total_templates": (
+                len(self._index.nodes) +
+                len(self._index.edges) +
+                len(self._index.states) +
+                len(self._index.prompts)
+            ),
+            "node_templates": len(self._index.nodes),
+            "edge_templates": len(self._index.edges),
+            "state_templates": len(self._index.states),
+            "prompt_templates": len(self._index.prompts),
+            "total_usage": (
+                sum(n.usage_count for n in self._index.nodes.values()) +
+                sum(e.usage_count for e in self._index.edges.values()) +
+                sum(s.usage_count for s in self._index.states.values()) +
+                sum(p.usage_count for p in self._index.prompts.values())
+            ),
+        }
+
+    def prune_unused(self, keep_recent: int = 200):
+        """清理低使用率的模板
+
+        保留条件：使用次数 > 0 或在最近 keep_recent 条之内
+        """
+        pruned = 0
+
+        for collection_name in ["nodes", "edges", "states", "prompts"]:
+            collection = getattr(self._index, collection_name)
+            candidates = sorted(
+                collection.values(),
+                key=lambda t: t.usage_count,
+                reverse=True,
+            )
+            to_keep = {t.template_id for t in candidates[:keep_recent]}
+
+            for tid in list(collection.keys()):
+                if tid not in to_keep:
+                    del collection[tid]
+                    pruned += 1
+
+        if pruned > 0:
+            self._save_index()
+            logger.info("library_pruned", removed=pruned)
+
+        return pruned
+
+    def list_templates(self, category: Optional[str] = None) -> list[dict]:
+        """列出模板摘要
+
+        Args:
+            category: 可选，筛选类别: node/edge/state/prompt
+
+        Returns:
+            模板摘要列表
+        """
+        results = []
+
+        if category is None or category == "node":
+            for t in self._index.nodes.values():
+                results.append({
+                    "category": "node", "id": t.template_id,
+                    "name": t.name, "type": t.type,
+                    "usage_count": t.usage_count,
+                })
+
+        if category is None or category == "edge":
+            for t in self._index.edges.values():
+                results.append({
+                    "category": "edge", "id": t.template_id,
+                    "name": f"{t.source_type} -> {t.target_type}",
+                    "usage_count": t.usage_count,
+                })
+
+        if category is None or category == "state":
+            for t in self._index.states.values():
+                results.append({
+                    "category": "state", "id": t.template_id,
+                    "name": t.field_name, "type": t.type,
+                    "usage_count": t.usage_count,
+                })
+
+        if category is None or category == "prompt":
+            for t in self._index.prompts.values():
+                results.append({
+                    "category": "prompt", "id": t.template_id,
+                    "name": t.name, "task_type": t.task_type,
+                    "usage_count": t.usage_count,
+                })
+
+        return results
