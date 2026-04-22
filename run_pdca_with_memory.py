@@ -20,6 +20,7 @@ import argparse
 import json
 from pathlib import Path
 from datetime import datetime
+from typing import Any
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -27,11 +28,12 @@ load_dotenv()
 from pdca.core.llm import setup_llm, get_llm_manager, get_llm_for_task
 from pdca.core.logger import setup_logging, get_logger, LogConfig, set_log_config
 from pdca.core.memory import PDCAMemory, MemoryContext
+from pdca.core.component_library import ComponentLibrary
 from pdca.plan.extractor import StructuredExtractor
 from pdca.plan.config_generator import ConfigGenerator
 from pdca.do_.code_generator import CodeGenerator
 from pdca.check.evaluator import run_evaluation
-from pdca.act.reviewer import GRRAVPReviewer, OptimizationGenerator
+from pdca.act.reviewer import GRBARPReviewer, OptimizationGenerator
 from pdca.act.loop_controller import create_loop_controller
 
 
@@ -95,16 +97,28 @@ def parse_args():
         action="store_true",
         help="禁用记忆系统（不使用历史经验）"
     )
+    parser.add_argument(
+        "--component-library-dir",
+        type=Path,
+        default=Path(".pdca_components"),
+        help="组件库存储目录"
+    )
+    parser.add_argument(
+        "--no-component-library",
+        action="store_true",
+        help="禁用组件库"
+    )
 
     return parser.parse_args()
 
 
 def plan_phase(
-    input_file: Path, 
-    workflow_name: str = None, 
-    verbose: bool = False, 
+    input_file: Path,
+    workflow_name: str = None,
+    verbose: bool = False,
     llm: Any = None,
-    memory_context: MemoryContext = None
+    memory_context: MemoryContext = None,
+    component_library: Any = None
 ):
     """Plan阶段：记忆增强的结构化抽取与配置生成
 
@@ -112,9 +126,11 @@ def plan_phase(
     - 读取 memory_context 中的历史经验
     - 将历史经验注入到 LLM prompt 中
     - 抽取时参考历史成功/失败模式
+    - 支持组件库查找复用（新增）
 
     Args:
-        memory_context: 来自记忆系统的历史上下文（新增）
+        memory_context: 来自记忆系统的历史上下文
+        component_library: 可复用组件库（新增）
 
     Returns:
         (StructuredDocument, WorkflowConfig, enhanced_prompt)
@@ -166,7 +182,7 @@ def plan_phase(
 
     # 4. 使用LLM生成工作流配置
     print(f"\n[Config] 使用LLM生成工作流配置...")
-    generator = ConfigGenerator()
+    generator = ConfigGenerator(component_library=component_library)
 
     config = generator.generate_with_refinement(
         document,
@@ -301,7 +317,7 @@ def act_phase(
     print("="*60)
 
     print(f"\n[Review] 使用LLM执行GR/RAVP复盘...")
-    reviewer = GRRAVPReviewer(llm=llm)
+    reviewer = GRBARPReviewer(llm=llm)
 
     review_result = reviewer.review(
         workflow_name=config.meta.name,
@@ -340,20 +356,22 @@ def act_phase(
 
 
 def act_phase_with_memory(
-    config, 
-    report, 
-    original_goals, 
-    output_dir: Path, 
+    config,
+    report,
+    original_goals,
+    output_dir: Path,
     iteration: int,
-    verbose: bool = False, 
+    verbose: bool = False,
     llm: Any = None,
-    memory: PDCAMemory = None
+    memory: PDCAMemory = None,
+    component_library: Any = None
 ):
-    """Act阶段（记忆增强版）：复盘 + 存入记忆
+    """Act阶段（记忆增强版）：复盘 + 存入记忆 + 知识固化
 
     与普通 act_phase 的区别：
     - 完成后自动将经验存入 PDCAMemory
     - 保存成功因素、失败教训、优化方案到记忆系统
+    - 组件库知识固化（新增）
     """
     logger = get_logger(__name__)
     print("\n" + "="*60)
@@ -362,7 +380,7 @@ def act_phase_with_memory(
 
     # 1. 执行复盘（与普通版相同）
     print(f"\n[Review] 使用LLM执行GR/RAVP复盘...")
-    reviewer = GRRAVPReviewer(llm=llm)
+    reviewer = GRBARPReviewer(llm=llm, component_library=component_library)
 
     review_result = reviewer.review(
         workflow_name=config.meta.name,
@@ -375,8 +393,8 @@ def act_phase_with_memory(
 
     # 2. 生成优化方案
     print(f"\n[Suggestion] 使用LLM生成优化方案...")
-    opt_generator = OptimizationGenerator(llm=llm)
-    proposals = opt_generator.generate_from_review(review_result)
+    opt_generator = OptimizationGenerator(llm=llm, component_library=component_library)
+    proposals = opt_generator.generate_from_review(review_result, config=config)
     proposals = opt_generator.prioritize_proposals(proposals)
 
     print(f"   [OK] 生成了 {len(proposals)} 个优化方案")
@@ -396,6 +414,15 @@ def act_phase_with_memory(
         # 打印记忆统计
         stats = memory.get_statistics()
         print(f"   记忆统计: {stats['total_memories']} 条记忆, {stats['workflows_tracked']} 个工作流")
+
+    # 3.5 【新增】组件库知识固化
+    if component_library:
+        print(f"\n[Library] 执行知识固化...")
+        discoveries = component_library.discover_reusable_components(
+            review_result, config, config.meta.name
+        )
+        if discoveries:
+            print(f"   发现 {len(discoveries)} 个可复用组件，已保存到组件库")
 
     # 4. 保存结果
     review_path = output_dir / "review_result.json"
@@ -447,6 +474,17 @@ def run_pdca_cycle(args):
         if stats['total_memories'] > 0:
             print(f"   记忆系统已就绪，将用于增强本轮迭代")
 
+    # 初始化组件库
+    component_library = None
+    if not args.no_component_library:
+        component_library = ComponentLibrary(
+            library_dir=str(args.component_library_dir),
+            llm=planner_llm,
+            enable_llm_matching=False,
+        )
+        lib_stats = component_library.get_statistics()
+        print(f"\n[Library] 组件库初始化: {lib_stats['total_templates']} 个模板")
+
     # 定义目标
     original_goals = [
         "成功生成可运行的工作流代码",
@@ -486,7 +524,8 @@ def run_pdca_cycle(args):
             args.workflow_name,
             args.verbose,
             llm=planner_llm,
-            memory_context=memory_context
+            memory_context=memory_context,
+            component_library=component_library
         )
 
         # === DO ===
@@ -515,7 +554,8 @@ def run_pdca_cycle(args):
                 iteration,
                 args.verbose,
                 llm=planner_llm,
-                memory=memory
+                memory=memory,
+                component_library=component_library
             )
         else:
             review_result, proposals = act_phase(

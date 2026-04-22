@@ -18,12 +18,14 @@
 import json
 import re
 import hashlib
+import yaml
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from datetime import datetime
 from pydantic import BaseModel, Field
 
 from pdca.core.logger import get_logger
+from pdca.core.utils import parse_json_response
 
 logger = get_logger(__name__)
 
@@ -89,12 +91,21 @@ class PromptTemplate(BaseModel):
 
 
 class ComponentLibraryIndex(BaseModel):
-    """组件库索引 — 持久化为 JSON"""
+    """组件库索引 — 内存中的工作模型"""
     nodes: Dict[str, NodeTemplate] = Field(default_factory=dict)
     edges: Dict[str, EdgeTemplate] = Field(default_factory=dict)
     states: Dict[str, StateTemplate] = Field(default_factory=dict)
     prompts: Dict[str, PromptTemplate] = Field(default_factory=dict)
     saved_at: str = Field(default="")
+
+
+class CatalogEntry(BaseModel):
+    """轻量目录条目 — 用于渐进式加载"""
+    id: str
+    category: str  # node / edge / state / prompt
+    name: str
+    summary: str
+    keywords: list[str] = Field(default_factory=list)
 
 
 # ============== 关键词工具 ==============
@@ -180,6 +191,37 @@ def _keyword_match_score(query_keywords: list[str], template_keywords: list[str]
     return len(overlap) / len(query_set)
 
 
+# ============== YAML 持久化 ==============
+
+_TYPE_FILES = {
+    "nodes": "nodes.yaml",
+    "edges": "edges.yaml",
+    "states": "states.yaml",
+    "prompts": "prompts.yaml",
+}
+
+_MODEL_MAP = {
+    "nodes": NodeTemplate,
+    "edges": EdgeTemplate,
+    "states": StateTemplate,
+    "prompts": PromptTemplate,
+}
+
+
+def _load_yaml_file(filepath: Path) -> dict | None:
+    """加载 YAML 文件，不存在返回 None"""
+    if not filepath.exists():
+        return None
+    with open(filepath, 'r', encoding='utf-8') as f:
+        return yaml.safe_load(f) or {}
+
+
+def _save_yaml_file(filepath: Path, data: dict):
+    """保存 YAML 文件（UTF-8，不转义中文）"""
+    with open(filepath, 'w', encoding='utf-8') as f:
+        yaml.dump(data, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+
+
 # ============== 核心组件库 ==============
 
 class ComponentLibrary:
@@ -190,38 +232,184 @@ class ComponentLibrary:
     2. 检索：新建工作流时查找相似已有组件
     3. 固化：从 GRRAVP 复盘中识别可复用知识
 
-    持久化目录结构（与 .pdca_memory/ 模式一致）：
+    持久化目录结构：
         .pdca_components/
-            index.json          # 所有模板
+            catalog.yaml     # 轻量索引（name + summary + keywords）
+            nodes.yaml       # 完整节点模板
+            edges.yaml       # 完整边模板
+            states.yaml      # 完整状态模板
+            prompts.yaml     # 完整提示词模板
     """
 
-    def __init__(self, library_dir: str = ".pdca_components"):
+    def __init__(
+        self,
+        library_dir: str = ".pdca_components",
+        llm: Optional[Any] = None,
+        enable_llm_matching: bool = False,
+    ):
         self.library_dir = Path(library_dir)
         self.library_dir.mkdir(parents=True, exist_ok=True)
-        self.index_file = self.library_dir / "index.json"
-        self._load_index()
+        self._llm = llm
+        self.enable_llm_matching = enable_llm_matching
+        self._load()
 
-    def _load_index(self):
-        """从磁盘加载索引"""
-        if self.index_file.exists():
-            with open(self.index_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                self._index = ComponentLibraryIndex(**data)
-        else:
-            self._index = ComponentLibraryIndex()
+    # ============== 持久化 ==============
 
-    def _save_index(self):
-        """保存索引到磁盘"""
-        self._index.saved_at = datetime.now().isoformat()
-        with open(self.index_file, 'w', encoding='utf-8') as f:
-            json.dump(self._index.model_dump(), f, ensure_ascii=False, indent=2)
+    def _load(self):
+        """从磁盘加载（自动检测旧格式并迁移）"""
+        # 检测旧版 index.json → 迁移
+        legacy_file = self.library_dir / "index.json"
+        if legacy_file.exists() and not (self.library_dir / "catalog.yaml").exists():
+            self._migrate_from_json(legacy_file)
+            return
+
+        # 加载 per-type YAML 文件
+        self._index = ComponentLibraryIndex()
+        for type_name, file_name in _TYPE_FILES.items():
+            data = _load_yaml_file(self.library_dir / file_name)
+            if data and "templates" in data:
+                model_class = _MODEL_MAP[type_name]
+                collection = getattr(self._index, type_name)
+                for tid, tdata in data["templates"].items():
+                    collection[tid] = model_class(**tdata)
+
+    def _save(self):
+        """保存到磁盘（per-type YAML + catalog）"""
+        now = datetime.now().isoformat()
+
+        # 写 per-type 文件
+        for type_name, file_name in _TYPE_FILES.items():
+            collection = getattr(self._index, type_name)
+            data = {
+                "version": "2.0",
+                "saved_at": now,
+                "templates": {tid: t.model_dump() for tid, t in collection.items()},
+            }
+            _save_yaml_file(self.library_dir / file_name, data)
+
+        # 写 catalog
+        self._rebuild_and_save_catalog(now)
+
+    def _rebuild_and_save_catalog(self, now: str = ""):
+        """重建并保存轻量目录"""
+        now = now or datetime.now().isoformat()
+        entries = []
+
+        for t in self._index.nodes.values():
+            entries.append(CatalogEntry(
+                id=t.template_id, category="node", name=t.name,
+                summary=f"{t.description} ({t.type})" if t.description else f"({t.type})",
+                keywords=t.name_keywords,
+            ))
+        for t in self._index.edges.values():
+            entries.append(CatalogEntry(
+                id=t.template_id, category="edge",
+                name=f"{t.source_type} -> {t.target_type}",
+                summary=f"{t.edge_type}" + (f" when {t.condition}" if t.condition else ""),
+                keywords=_extract_keywords(f"{t.source_type} {t.target_type}"),
+            ))
+        for t in self._index.states.values():
+            req = "required" if t.required else "optional"
+            entries.append(CatalogEntry(
+                id=t.template_id, category="state", name=t.field_name,
+                summary=f"{t.type} ({req}) {t.description}".strip(),
+                keywords=t.name_keywords,
+            ))
+        for t in self._index.prompts.values():
+            entries.append(CatalogEntry(
+                id=t.template_id, category="prompt", name=t.name,
+                summary=f"[{t.task_type}] {t.name}",
+                keywords=t.name_keywords,
+            ))
+
+        catalog_data = {
+            "version": "2.0",
+            "saved_at": now,
+            "total_components": len(entries),
+            "components": [e.model_dump() for e in entries],
+        }
+        _save_yaml_file(self.library_dir / "catalog.yaml", catalog_data)
+
+    def _migrate_from_json(self, legacy_file: Path):
+        """从旧版 index.json 迁移到 YAML 格式"""
+        logger.info("migrating_component_library", source=str(legacy_file))
+        with open(legacy_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        self._index = ComponentLibraryIndex(**data)
+        self._save()
+        backup_path = legacy_file.rename(legacy_file.with_suffix(".json.bak"))
+        logger.info("migration_complete", backup=str(backup_path))
 
     def _generate_id(self, prefix: str, name: str) -> str:
         """生成模板ID（与 memory.py 的 _generate_memory_id 模式一致）"""
         hash_input = f"{prefix}_{name}_{datetime.now().isoformat()}"
         return hashlib.md5(hash_input.encode()).hexdigest()[:12]
 
-    # ============== 查找方法 ==============
+    # ============== 查找方法（双层匹配） ==============
+
+    def _should_use_llm(self, override: Optional[bool] = None) -> bool:
+        """判断是否启用 LLM 匹配"""
+        if override is not None:
+            return override and self._llm is not None
+        return self.enable_llm_matching and self._llm is not None
+
+    def _llm_lookup(self, category: str, query: str, **kwargs) -> Optional[Any]:
+        """Tier 2: LLM 语义匹配回退"""
+        if not self._llm:
+            return None
+
+        # 从 catalog 读取候选
+        catalog_data = _load_yaml_file(self.library_dir / "catalog.yaml")
+        if not catalog_data:
+            return None
+
+        candidates = [
+            e for e in catalog_data.get("components", [])
+            if e.get("category") == category
+        ]
+        if not candidates:
+            return None
+
+        candidates_text = "\n".join(
+            f"  - ID: {e['id']}, Name: {e['name']}, Summary: {e.get('summary', '')}"
+            for e in candidates
+        )
+
+        from pdca.core.prompts import COMPONENT_LLM_MATCH_PROMPT
+        prompt = COMPONENT_LLM_MATCH_PROMPT.format(
+            category=category,
+            query=query.strip(),
+            candidates=candidates_text,
+        )
+
+        try:
+            response = self._llm.generate_messages([
+                {"role": "system", "content": "你是组件匹配专家。根据查询从候选组件中选择最佳匹配。输出严格的JSON。"},
+                {"role": "user", "content": prompt},
+            ])
+            result = parse_json_response(response)
+            if result and result.get("match_id"):
+                match_id = result["match_id"]
+                collection_map = {
+                    "node": self._index.nodes,
+                    "edge": self._index.edges,
+                    "state": self._index.states,
+                    "prompt": self._index.prompts,
+                }
+                collection = collection_map.get(category, {})
+                match = collection.get(match_id)
+                if match:
+                    match.usage_count += 1
+                    match.last_used = datetime.now().isoformat()
+                    self._save()
+                    logger.info("llm_component_matched",
+                               category=category, match_id=match_id,
+                               confidence=result.get("confidence", 0))
+                    return match
+        except Exception as e:
+            logger.warning("llm_matching_failed", error=str(e))
+
+        return None
 
     def lookup_node(
         self,
@@ -229,48 +417,52 @@ class ComponentLibrary:
         description: str = "",
         node_type: Optional[str] = None,
         threshold: float = 0.3,
+        use_llm: Optional[bool] = None,
     ) -> Optional[NodeTemplate]:
-        """查找相似节点模板
+        """查找相似节点模板（双层匹配）
 
         Args:
             name: 节点名称
             description: 节点描述
             node_type: 可选，节点类型过滤
             threshold: 最低匹配阈值
+            use_llm: 是否启用 LLM 语义回退（None=跟随全局设置）
 
         Returns:
             最佳匹配的 NodeTemplate，无匹配返回 None
         """
+        # Tier 1: 关键词匹配
         query_keywords = _extract_keywords(f"{name} {description}")
 
-        if not query_keywords:
-            return None
+        if query_keywords:
+            candidates = list(self._index.nodes.values())
+            if node_type:
+                candidates = [n for n in candidates if n.type == node_type]
 
-        candidates = list(self._index.nodes.values())
+            best_match = None
+            best_score = 0.0
 
-        if node_type:
-            candidates = [n for n in candidates if n.type == node_type]
+            for template in candidates:
+                score = _keyword_match_score(query_keywords, template.name_keywords)
+                if node_type and template.type == node_type:
+                    score += 0.1
+                if score > best_score:
+                    best_score = score
+                    best_match = template
 
-        best_match = None
-        best_score = 0.0
+            if best_match and best_score >= threshold:
+                best_match.usage_count += 1
+                best_match.last_used = datetime.now().isoformat()
+                self._save()
+                logger.info("node_template_matched",
+                           template=best_match.name, score=best_score,
+                           query=name)
+                return best_match
 
-        for template in candidates:
-            score = _keyword_match_score(query_keywords, template.name_keywords)
-            # 类型匹配加分
-            if node_type and template.type == node_type:
-                score += 0.1
-            if score > best_score:
-                best_score = score
-                best_match = template
-
-        if best_match and best_score >= threshold:
-            best_match.usage_count += 1
-            best_match.last_used = datetime.now().isoformat()
-            self._save_index()
-            logger.info("node_template_matched",
-                       template=best_match.name, score=best_score,
-                       query=name)
-            return best_match
+        # Tier 2: LLM 语义回退
+        if self._should_use_llm(use_llm):
+            return self._llm_lookup("node", f"{name} {description}",
+                                    node_type=node_type)
 
         return None
 
@@ -279,8 +471,10 @@ class ComponentLibrary:
         source_name: str,
         target_name: str,
         edge_type: Optional[str] = None,
+        use_llm: Optional[bool] = None,
     ) -> Optional[EdgeTemplate]:
-        """查找相似边模板"""
+        """查找相似边模板（双层匹配）"""
+        # Tier 1
         source_keywords = _extract_keywords(source_name)
         target_keywords = _extract_keywords(target_name)
 
@@ -302,8 +496,13 @@ class ComponentLibrary:
         if best_match and best_score >= 0.3:
             best_match.usage_count += 1
             best_match.last_used = datetime.now().isoformat()
-            self._save_index()
+            self._save()
             return best_match
+
+        # Tier 2
+        if self._should_use_llm(use_llm):
+            return self._llm_lookup("edge", f"{source_name} -> {target_name}",
+                                    edge_type=edge_type)
 
         return None
 
@@ -311,8 +510,10 @@ class ComponentLibrary:
         self,
         field_name: str,
         field_type: Optional[str] = None,
+        use_llm: Optional[bool] = None,
     ) -> Optional[StateTemplate]:
-        """查找相似状态模板"""
+        """查找相似状态模板（双层匹配）"""
+        # Tier 1
         query_keywords = _extract_keywords(field_name)
 
         best_match = None
@@ -323,7 +524,6 @@ class ComponentLibrary:
                 continue
 
             score = _keyword_match_score(query_keywords, template.name_keywords)
-            # 精确名称匹配额外加分
             if template.field_name.lower() == field_name.lower():
                 score += 0.5
 
@@ -334,8 +534,12 @@ class ComponentLibrary:
         if best_match and best_score >= 0.4:
             best_match.usage_count += 1
             best_match.last_used = datetime.now().isoformat()
-            self._save_index()
+            self._save()
             return best_match
+
+        # Tier 2
+        if self._should_use_llm(use_llm):
+            return self._llm_lookup("state", field_name, field_type=field_type)
 
         return None
 
@@ -343,8 +547,10 @@ class ComponentLibrary:
         self,
         task_type: str,
         name: str = "",
+        use_llm: Optional[bool] = None,
     ) -> Optional[PromptTemplate]:
-        """查找相似提示词模板"""
+        """查找相似提示词模板（双层匹配）"""
+        # Tier 1
         query_keywords = _extract_keywords(name)
 
         best_match = None
@@ -362,8 +568,12 @@ class ComponentLibrary:
         if best_match and best_score >= 0.3:
             best_match.usage_count += 1
             best_match.last_used = datetime.now().isoformat()
-            self._save_index()
+            self._save()
             return best_match
+
+        # Tier 2
+        if self._should_use_llm(use_llm):
+            return self._llm_lookup("prompt", name, task_type=task_type)
 
         return None
 
@@ -390,7 +600,7 @@ class ComponentLibrary:
                 existing.usage_count += 1
                 existing.last_used = datetime.now().isoformat()
                 existing.source_workflow = workflow_name
-                self._save_index()
+                self._save()
                 logger.info("node_template_updated", name=name)
                 return existing
 
@@ -408,7 +618,7 @@ class ComponentLibrary:
         )
 
         self._index.nodes[template_id] = template
-        self._save_index()
+        self._save()
         logger.info("node_template_saved", name=name, template_id=template_id)
         return template
 
@@ -430,7 +640,7 @@ class ComponentLibrary:
                     and existing.edge_type == getattr(edge, 'type', 'sequential')):
                 existing.usage_count += 1
                 existing.last_used = datetime.now().isoformat()
-                self._save_index()
+                self._save()
                 return existing
 
         template = EdgeTemplate(
@@ -445,7 +655,7 @@ class ComponentLibrary:
         )
 
         self._index.edges[template_id] = template
-        self._save_index()
+        self._save()
         logger.info("edge_template_saved", source=source, target=target)
         return template
 
@@ -459,7 +669,7 @@ class ComponentLibrary:
             if existing.field_name == field_name:
                 existing.usage_count += 1
                 existing.last_used = datetime.now().isoformat()
-                self._save_index()
+                self._save()
                 return existing
 
         description = getattr(state, 'description', '') or ""
@@ -476,7 +686,7 @@ class ComponentLibrary:
         )
 
         self._index.states[template_id] = template
-        self._save_index()
+        self._save()
         logger.info("state_template_saved", field_name=field_name)
         return template
 
@@ -496,7 +706,7 @@ class ComponentLibrary:
                 existing.content = content
                 existing.usage_count += 1
                 existing.last_used = datetime.now().isoformat()
-                self._save_index()
+                self._save()
                 return existing
 
         template = PromptTemplate(
@@ -510,7 +720,7 @@ class ComponentLibrary:
         )
 
         self._index.prompts[template_id] = template
-        self._save_index()
+        self._save()
         logger.info("prompt_template_saved", name=name, task_type=task_type)
         return template
 
@@ -682,7 +892,7 @@ class ComponentLibrary:
                     pruned += 1
 
         if pruned > 0:
-            self._save_index()
+            self._save()
             logger.info("library_pruned", removed=pruned)
 
         return pruned

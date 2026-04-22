@@ -331,3 +331,21 @@ COMPONENT_DISCOVERY_PROMPT = """分析以下工作流配置和复盘结果，识
         }}
     ]
 }}"""
+
+COMPONENT_LLM_MATCH_PROMPT = """我需要从组件库中查找与以下需求匹配的{category}组件。
+
+需求描述: {query}
+
+可用组件列表:
+{candidates}
+
+请分析语义相似度，选择最匹配的组件。
+
+以JSON格式输出:
+{{
+    "match_id": "最匹配组件的ID，无匹配则为null",
+    "confidence": 0.0到1.0之间的置信度,
+    "reason": "选择理由（简短说明）"
+}}
+
+如果没有语义上足够接近的匹配，请将match_id设为null。"""

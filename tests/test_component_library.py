@@ -5,10 +5,11 @@
 
 import json
 import pytest
+import yaml
 from pathlib import Path
 from pdca.core.component_library import (
     NodeTemplate, EdgeTemplate, StateTemplate, PromptTemplate,
-    ComponentLibraryIndex, ComponentLibrary,
+    ComponentLibraryIndex, CatalogEntry, ComponentLibrary,
     _extract_keywords, _keyword_match_score,
 )
 from pdca.core.config import (
@@ -251,6 +252,10 @@ class TestComponentLibrary:
         node = NodeDefinition(node_id="n1", name="获取数据", type="tool")
         lib1.save_node(node, "test_workflow")
 
+        # 验证生成了 YAML 文件
+        assert (Path(lib_dir) / "catalog.yaml").exists()
+        assert (Path(lib_dir) / "nodes.yaml").exists()
+
         # 重新加载
         lib2 = ComponentLibrary(library_dir=lib_dir)
         match = lib2.lookup_node("获取数据")
@@ -408,3 +413,181 @@ class TestConfigGeneratorIntegration:
         generator = ConfigGenerator()  # 不传 component_library
         config = generator.generate(doc)
         assert config.nodes[0].name == "测试"
+
+
+# ============== YAML 存储测试 ==============
+
+class TestYAMLStorage:
+
+    def test_saves_as_yaml_files(self, tmp_path):
+        lib = ComponentLibrary(library_dir=str(tmp_path / "yaml_test"))
+        node = NodeDefinition(node_id="n1", name="获取数据", type="tool")
+        lib.save_node(node, "test_workflow")
+
+        lib_dir = tmp_path / "yaml_test"
+        assert (lib_dir / "catalog.yaml").exists()
+        assert (lib_dir / "nodes.yaml").exists()
+        assert (lib_dir / "edges.yaml").exists()
+        assert (lib_dir / "states.yaml").exists()
+        assert (lib_dir / "prompts.yaml").exists()
+
+    def test_catalog_contains_entries(self, tmp_path):
+        lib = ComponentLibrary(library_dir=str(tmp_path / "cat_test"))
+        node = NodeDefinition(
+            node_id="n1", name="获取数据", type="tool",
+            description="从API获取数据",
+        )
+        lib.save_node(node, "test_workflow")
+
+        with open(tmp_path / "cat_test" / "catalog.yaml", 'r', encoding='utf-8') as f:
+            catalog = yaml.safe_load(f)
+
+        assert catalog["total_components"] >= 1
+        assert any(c["name"] == "获取数据" for c in catalog["components"])
+        assert any(c["category"] == "node" for c in catalog["components"])
+
+    def test_yaml_utf8_encoding(self, tmp_path):
+        lib = ComponentLibrary(library_dir=str(tmp_path / "utf8_test"))
+        node = NodeDefinition(
+            node_id="n1", name="获取数据", type="tool",
+            description="包含中文的描述",
+        )
+        lib.save_node(node, "中文工作流")
+
+        with open(tmp_path / "utf8_test" / "nodes.yaml", 'r', encoding='utf-8') as f:
+            content = f.read()
+        # 中文不应该被转义为 \uXXXX
+        assert "获取数据" in content
+        assert "包含中文" in content
+
+    def test_migrate_from_legacy_json(self, tmp_path):
+        """测试旧版 index.json 自动迁移到 YAML"""
+        lib_dir = tmp_path / "migrate_test"
+        lib_dir.mkdir()
+
+        # 创建旧版 index.json
+        old_data = {
+            "nodes": {
+                "nt_1": {
+                    "template_id": "nt_1", "name": "测试节点",
+                    "name_keywords": ["测试", "节点", "测试节点"], "type": "tool",
+                    "description": "", "inputs": [], "outputs": [],
+                    "config": {}, "source_workflow": "", "usage_count": 0,
+                    "last_used": "", "created_at": "2026-01-01T00:00:00",
+                }
+            },
+            "edges": {}, "states": {}, "prompts": {},
+            "saved_at": "2026-01-01T00:00:00",
+        }
+        with open(lib_dir / "index.json", 'w', encoding='utf-8') as f:
+            json.dump(old_data, f, ensure_ascii=False)
+
+        # 加载时应自动迁移
+        lib = ComponentLibrary(library_dir=str(lib_dir))
+        match = lib.lookup_node("测试节点")
+        assert match is not None
+        assert match.name == "测试节点"
+
+        # 旧文件应被备份
+        assert (lib_dir / "index.json.bak").exists()
+        # 新 YAML 文件应存在
+        assert (lib_dir / "catalog.yaml").exists()
+        assert (lib_dir / "nodes.yaml").exists()
+
+    def test_catalog_entry_model(self):
+        entry = CatalogEntry(
+            id="nt_abc", category="node", name="获取数据",
+            summary="从API获取数据 (tool)", keywords=["获取", "数据"],
+        )
+        assert entry.category == "node"
+        data = entry.model_dump()
+        assert data["name"] == "获取数据"
+
+
+# ============== LLM 匹配测试 ==============
+
+class TestLLMMatching:
+
+    def test_llm_not_used_by_default(self, library):
+        """默认不启用 LLM 匹配"""
+        # 即使没有 LLM 也应该正常工作（Tier 1 only）
+        match = library.lookup_node("完全不相关的查询xyz")
+        assert match is None
+
+    def test_llm_lookup_with_mock(self, tmp_path):
+        """测试 Mock LLM 语义匹配"""
+        lib = ComponentLibrary(library_dir=str(tmp_path / "llm_test"))
+        node = NodeDefinition(
+            node_id="n1", name="获取API数据", type="tool",
+            description="从外部API获取信息",
+        )
+        lib.save_node(node, "test_workflow")
+
+        # 获取保存的 template_id
+        template_id = list(lib._index.nodes.keys())[0]
+
+        # 创建 Mock LLM
+        class MockLLM:
+            def generate_messages(self, messages, **kwargs):
+                return json.dumps({
+                    "match_id": template_id,
+                    "confidence": 0.85,
+                    "reason": "语义匹配：抓取网络接口 ≈ 获取API数据",
+                })
+
+        lib._llm = MockLLM()
+        lib.enable_llm_matching = True
+
+        # 用 Tier 1 不会匹配的查询触发 LLM
+        match = lib.lookup_node("抓取网络接口内容")
+        assert match is not None
+        assert match.name == "获取API数据"
+
+    def test_llm_returns_null_on_no_match(self, tmp_path):
+        """测试 LLM 返回 null 时不匹配"""
+        lib = ComponentLibrary(library_dir=str(tmp_path / "llm_null"))
+        node = NodeDefinition(node_id="n1", name="获取数据", type="tool")
+        lib.save_node(node, "test_workflow")
+
+        class MockLLM:
+            def generate_messages(self, messages, **kwargs):
+                return json.dumps({
+                    "match_id": None,
+                    "confidence": 0.0,
+                    "reason": "无匹配",
+                })
+
+        lib._llm = MockLLM()
+        lib.enable_llm_matching = True
+
+        match = lib.lookup_node("完全不相关的查询")
+        assert match is None
+
+    def test_use_llm_override(self, tmp_path):
+        """测试 use_llm 参数覆盖全局设置"""
+        lib = ComponentLibrary(
+            library_dir=str(tmp_path / "override_test"),
+            enable_llm_matching=False,
+        )
+        node = NodeDefinition(node_id="n1", name="获取数据", type="tool")
+        lib.save_node(node, "test_workflow")
+
+        template_id = list(lib._index.nodes.keys())[0]
+
+        class MockLLM:
+            def generate_messages(self, messages, **kwargs):
+                return json.dumps({
+                    "match_id": template_id,
+                    "confidence": 0.9,
+                    "reason": "test",
+                })
+
+        lib._llm = MockLLM()
+
+        # 全局关闭但调用时启用
+        match = lib.lookup_node("完全不相关的查询", use_llm=True)
+        assert match is not None
+
+        # 全局关闭且调用时不覆盖 → 不走 LLM
+        match = lib.lookup_node("完全不相关的查询xyz", use_llm=False)
+        assert match is None
