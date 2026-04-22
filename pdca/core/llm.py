@@ -4,6 +4,7 @@
 """
 
 import os
+import random
 import time
 from typing import Any, Dict, Optional, Callable
 from functools import wraps
@@ -22,13 +23,41 @@ class RateLimitError(LLMError):
     pass
 
 
+class TimeoutError(LLMError):
+    """请求超时异常"""
+    pass
+
+
 class ModelUnavailableError(LLMError):
     """模型不可用异常"""
     pass
 
 
-def retry_on_error(max_retries: int = 3, delay: float = 1.0, backoff: float = 2.0):
-    """错误重试装饰器"""
+# 可重试的错误类型
+_RETRYABLE_ERRORS = (RateLimitError, TimeoutError)
+
+
+def _is_retryable_exception(exc: Exception) -> bool:
+    """判断异常是否值得重试"""
+    if isinstance(exc, _RETRYABLE_ERRORS):
+        return True
+    # 检查错误信息中的可重试关键词
+    msg = str(exc).lower()
+    retryable_keywords = [
+        "timed out", "timeout",
+        "529", "overloaded",
+        "rate", "limit",
+        "too many requests", "429",
+        "connection", "reset", "unavailable",
+    ]
+    return any(kw in msg for kw in retryable_keywords)
+
+
+def retry_on_error(max_retries: int = 3, delay: float = 2.0, backoff: float = 2.0):
+    """错误重试装饰器
+
+    对可重试错误（限流、超时、过载等）自动重试，带指数退避和随机抖动。
+    """
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -38,24 +67,36 @@ def retry_on_error(max_retries: int = 3, delay: float = 1.0, backoff: float = 2.
             for attempt in range(max_retries + 1):
                 try:
                     return func(*args, **kwargs)
-                except RateLimitError as e:
-                    last_exception = e
-                    if attempt < max_retries:
-                        logger.warning(
-                            "rate_limit_retry",
-                            attempt=attempt + 1,
-                            max_retries=max_retries,
-                            delay=current_delay
-                        )
-                        time.sleep(current_delay)
-                        current_delay *= backoff
-                    else:
-                        logger.error("rate_limit_max_retries", attempts=attempt + 1)
-                        raise
                 except Exception as e:
                     last_exception = e
-                    logger.error("llm_call_error", error=str(e), attempt=attempt + 1)
-                    raise
+
+                    if _is_retryable_exception(e) and attempt < max_retries:
+                        # 添加随机抖动，避免多请求同时重试
+                        jitter = random.uniform(0.5, 1.5)
+                        actual_delay = current_delay * jitter
+                        logger.warning(
+                            "llm_retryable_error",
+                            attempt=attempt + 1,
+                            max_retries=max_retries,
+                            delay=round(actual_delay, 2),
+                            error=str(e)[:200],
+                        )
+                        time.sleep(actual_delay)
+                        current_delay *= backoff
+                    else:
+                        if attempt >= max_retries:
+                            logger.error(
+                                "llm_max_retries_exceeded",
+                                attempts=attempt + 1,
+                                error=str(e)[:200],
+                            )
+                        else:
+                            logger.error(
+                                "llm_non_retryable_error",
+                                error=str(e)[:200],
+                                attempt=attempt + 1,
+                            )
+                        raise
 
             raise last_exception
         return wrapper
@@ -95,7 +136,7 @@ class OpenAILLM:
                 raise ModelUnavailableError("请安装 openai 包: pip install openai")
         return self._client
 
-    @retry_on_error(max_retries=3, delay=1.0)
+    @retry_on_error(max_retries=3, delay=2.0)
     def generate(self, prompt: str, **kwargs) -> str:
         """生成文本（纯user消息）"""
         try:
@@ -108,11 +149,9 @@ class OpenAILLM:
             return response.choices[0].message.content
         except Exception as e:
             logger.error("openai_generate_error", error=str(e))
-            if "rate" in str(e).lower():
-                raise RateLimitError(f"API限流: {e}")
-            raise LLMError(f"生成失败: {e}")
+            raise self._classify_error(e)
 
-    @retry_on_error(max_retries=3, delay=1.0)
+    @retry_on_error(max_retries=3, delay=2.0)
     def generate_messages(self, messages: list[Dict[str, str]], **kwargs) -> str:
         """生成文本（消息格式，支持system/user/assistant）"""
         try:
@@ -125,9 +164,19 @@ class OpenAILLM:
             return response.choices[0].message.content
         except Exception as e:
             logger.error("openai_generate_messages_error", error=str(e))
-            if "rate" in str(e).lower():
-                raise RateLimitError(f"API限流: {e}")
-            raise LLMError(f"生成失败: {e}")
+            raise self._classify_error(e)
+
+    @staticmethod
+    def _classify_error(e: Exception) -> LLMError:
+        """将原始异常分类为具体的 LLM 错误类型"""
+        msg = str(e).lower()
+        if any(kw in msg for kw in ("rate", "limit", "429", "too many")):
+            return RateLimitError(f"API限流: {e}")
+        if any(kw in msg for kw in ("timed out", "timeout")):
+            return TimeoutError(f"请求超时: {e}")
+        if any(kw in msg for kw in ("529", "overloaded")):
+            return RateLimitError(f"API过载: {e}")
+        return LLMError(f"生成失败: {e}")
 
 
 # 向后兼容别名（Phase 3-7 完成后移除）
@@ -217,6 +266,7 @@ def setup_llm(
             model=model,
             api_key=api_key or os.getenv("ZHIPU_API_KEY"),
             base_url=base_url or os.getenv("ZHIPU_BASE_URL", "https://open.bigmodel.cn/api/paas/v4/"),
+            timeout=kwargs.pop("timeout", 120.0),
             **kwargs,
         )
     elif provider == "minimax":
@@ -224,6 +274,7 @@ def setup_llm(
             model=model,
             api_key=api_key or os.getenv("MINIMAX_API_KEY"),
             base_url=base_url or os.getenv("MINIMAX_BASE_URL", "https://api.minimaxi.com/v1"),
+            timeout=kwargs.pop("timeout", 180.0),
             **kwargs,
         )
     elif provider == "openai":
