@@ -724,7 +724,288 @@ class ComponentLibrary:
         logger.info("prompt_template_saved", name=name, task_type=task_type)
         return template
 
-    # ============== 批量操作 ==============
+    # ============== 批量语义匹配 ==============
+
+    def batch_match(self, config: Any, llm: Optional[Any] = None) -> dict[str, list[dict]]:
+        """LLM 批量语义匹配：一次调用匹配所有 nodes/edges/states
+
+        Args:
+            config: WorkflowConfig 实例
+            llm: OpenAILLM 实例（为 None 时使用 self._llm）
+
+        Returns:
+            {"nodes": [...], "edges": [...], "states": [...]}
+            每个元素: {"query_name": str, "matched": NodeTemplate|None, "confidence": float,
+                       "enhanced_fields": dict}
+        """
+        llm = llm or self._llm
+        if not llm:
+            logger.warning("batch_match_no_llm")
+            return {"nodes": [], "edges": [], "states": []}
+
+        catalog_data = _load_yaml_file(self.library_dir / "catalog.yaml")
+        if not catalog_data:
+            return {"nodes": [], "edges": [], "states": []}
+
+        all_catalog = catalog_data.get("components", [])
+
+        nodes = getattr(config, 'nodes', [])
+        edges = getattr(config, 'edges', [])
+        states = getattr(config, 'state', [])
+
+        # 建立节点 ID→名称映射（边的 source/target 是 ID）
+        node_id_to_name = {n.node_id: n.name for n in nodes if hasattr(n, 'node_id')}
+
+        results: dict[str, list[dict]] = {}
+
+        # --- 按类别分批匹配 ---
+        for category, items, query_builder in [
+            ("node", nodes, self._build_node_queries),
+            ("state", states, self._build_state_queries),
+        ]:
+            if not items:
+                results[category + "s"] = []
+                continue
+            queries_text = query_builder(items)
+            candidates_text = self._format_catalog_candidates(all_catalog, category)
+            if not candidates_text.strip():
+                results[category + "s"] = [{"query_name": getattr(it, 'name', getattr(it, 'field_name', '')),
+                                           "matched": None, "confidence": 0.0, "enhanced_fields": {}}
+                                          for it in items]
+                continue
+            matches = self._do_batch_llm_match(category, queries_text, candidates_text, llm)
+            results[category + "s"] = self._resolve_matches(category, matches, items)
+
+        # --- 边匹配（基于节点名称） ---
+        if edges:
+            queries_text = self._build_edge_queries(edges, node_id_to_name)
+            candidates_text = self._format_catalog_candidates(all_catalog, "edge")
+            if candidates_text.strip():
+                matches = self._do_batch_llm_match("edge", queries_text, candidates_text, llm)
+                results["edges"] = self._resolve_edge_matches(matches, edges, node_id_to_name)
+            else:
+                results["edges"] = [{"query_name": f"{e.source}->{e.target}", "matched": None,
+                                     "confidence": 0.0, "enhanced_fields": {}} for e in edges]
+        else:
+            results["edges"] = []
+
+        logger.info("batch_component_matched",
+                    nodes=len(results.get("nodes", [])),
+                    edges=len(results.get("edges", [])),
+                    states=len(results.get("states", [])))
+        return results
+
+    def batch_enhance(self, config: Any, llm: Optional[Any] = None) -> Any:
+        """批量语义匹配 + 增强配置（填充空字段）
+
+        Args:
+            config: WorkflowConfig 实例
+            llm: OpenAILLM 实例
+
+        Returns:
+            增强后的 WorkflowConfig（原地修改并返回）
+        """
+        results = self.batch_match(config, llm)
+        enhanced_count = 0
+
+        # 增强 nodes
+        for match_info in results.get("nodes", []):
+            name = match_info.get("query_name", "")
+            enhanced = match_info.get("enhanced_fields", {})
+            if not enhanced:
+                continue
+            for node in getattr(config, 'nodes', []):
+                if node.name == name:
+                    if not node.description and enhanced.get("description"):
+                        node.description = enhanced["description"]
+                    if not node.inputs and enhanced.get("inputs"):
+                        node.inputs = enhanced["inputs"]
+                    if not node.outputs and enhanced.get("outputs"):
+                        node.outputs = enhanced["outputs"]
+                    enhanced_count += 1
+                    logger.info("batch_node_enhanced", node=name)
+                    break
+
+        # 增强 states
+        for match_info in results.get("states", []):
+            name = match_info.get("query_name", "")
+            enhanced = match_info.get("enhanced_fields", {})
+            if not enhanced:
+                continue
+            for state in getattr(config, 'state', []):
+                if state.field_name == name:
+                    if not state.description and enhanced.get("description"):
+                        state.description = enhanced["description"]
+                    enhanced_count += 1
+                    logger.info("batch_state_enhanced", state=name)
+                    break
+
+        logger.info("batch_enhance_complete", enhanced_count=enhanced_count)
+        return config
+
+    # --- 批量匹配辅助方法 ---
+
+    def _build_node_queries(self, nodes: list) -> str:
+        lines = []
+        for n in nodes:
+            name = getattr(n, 'name', '')
+            ntype = getattr(n, 'type', 'tool')
+            desc = getattr(n, 'description', '') or ''
+            inputs = getattr(n, 'inputs', []) or []
+            outputs = getattr(n, 'outputs', []) or []
+            missing = []
+            if not desc:
+                missing.append("description")
+            if not inputs:
+                missing.append("inputs")
+            if not outputs:
+                missing.append("outputs")
+            lines.append(
+                f'- 名称: "{name}", 类型: {ntype}, 描述: "{desc}", '
+                f'输入: {inputs}, 输出: {outputs}, 缺失字段: {missing}'
+            )
+        return "\n".join(lines)
+
+    def _build_state_queries(self, states: list) -> str:
+        lines = []
+        for s in states:
+            fname = getattr(s, 'field_name', '')
+            ftype = getattr(s, 'type', 'string')
+            desc = getattr(s, 'description', '') or ''
+            required = getattr(s, 'required', False)
+            missing = []
+            if not desc:
+                missing.append("description")
+            lines.append(
+                f'- 字段: "{fname}", 类型: {ftype}, 描述: "{desc}", 必填: {required}, 缺失字段: {missing}'
+            )
+        return "\n".join(lines)
+
+    def _build_edge_queries(self, edges: list, node_id_to_name: dict) -> str:
+        lines = []
+        for e in edges:
+            source = getattr(e, 'source', '')
+            target = getattr(e, 'target', '')
+            etype = getattr(e, 'type', 'sequential')
+            cond = getattr(e, 'condition', '') or ''
+            source_name = node_id_to_name.get(source, source)
+            target_name = node_id_to_name.get(target, target)
+            lines.append(
+                f'- 源: "{source_name}", 目标: "{target_name}", '
+                f'类型: {etype}, 条件: "{cond}"'
+            )
+        return "\n".join(lines)
+
+    def _format_catalog_candidates(self, all_catalog: list, category: str) -> str:
+        candidates = [e for e in all_catalog if e.get("category") == category]
+        if not candidates:
+            return ""
+        lines = []
+        for c in candidates:
+            lines.append(f'- ID: {c["id"]}, 名称: "{c["name"]}", 摘要: {c.get("summary", "")}')
+        return "\n".join(lines)
+
+    def _do_batch_llm_match(self, category: str, queries_text: str,
+                           candidates_text: str, llm: Any) -> list[dict]:
+        """执行一次 LLM 批量匹配调用"""
+        from pdca.core.prompts import BATCH_MATCH_PROMPT
+
+        prompt = BATCH_MATCH_PROMPT.format(
+            category=category,
+            queries=queries_text,
+            candidates=candidates_text,
+        )
+
+        try:
+            response = llm.generate_messages([
+                {"role": "system", "content": "你是组件库语义匹配专家。只输出纯JSON，不要任何额外文本。"},
+                {"role": "user", "content": prompt},
+            ])
+            data = parse_json_response(response)
+            if data and "matches" in data:
+                return data["matches"]
+        except Exception as e:
+            logger.warning("batch_llm_match_failed", category=category, error=str(e))
+
+        return []
+
+    def _resolve_matches(self, category: str, matches: list[dict],
+                         items: list) -> list[dict]:
+        """将 LLM 匹配结果解析为带模板引用的结构"""
+        collection_map = {"node": self._index.nodes, "state": self._index.states}
+        collection = collection_map.get(category, {})
+        results = []
+
+        for item in items:
+            item_name = getattr(item, 'name', getattr(item, 'field_name', ''))
+            match_entry = None
+            for m in matches:
+                if m.get("query_name") == item_name:
+                    match_entry = m
+                    break
+
+            if not match_entry:
+                results.append({"query_name": item_name, "matched": None,
+                               "confidence": 0.0, "enhanced_fields": {}})
+                continue
+
+            matched_id = match_entry.get("matched_id")
+            template = collection.get(matched_id) if matched_id else None
+
+            if template:
+                template.usage_count += 1
+                template.last_used = datetime.now().isoformat()
+
+            results.append({
+                "query_name": item_name,
+                "matched": template,
+                "confidence": match_entry.get("confidence", 0.0),
+                "enhanced_fields": match_entry.get("enhanced_fields", {}),
+            })
+
+        if any(r["matched"] for r in results):
+            self._save()
+
+        return results
+
+    def _resolve_edge_matches(self, matches: list[dict], edges: list,
+                              node_id_to_name: dict) -> list[dict]:
+        """将 LLM 匹配结果解析为边匹配结构"""
+        results = []
+        for e in edges:
+            source = getattr(e, 'source', '')
+            target = getattr(e, 'target', '')
+            source_name = node_id_to_name.get(source, source)
+            target_name = node_id_to_name.get(target, target)
+            query_key = f"{source_name}->{target_name}"
+
+            match_entry = None
+            for m in matches:
+                mq = m.get("query_name", "")
+                if mq == query_key or mq == f"{source_name} -> {target_name}":
+                    match_entry = m
+                    break
+
+            matched_id = match_entry.get("matched_id") if match_entry else None
+            template = self._index.edges.get(matched_id) if matched_id else None
+
+            if template:
+                template.usage_count += 1
+                template.last_used = datetime.now().isoformat()
+
+            results.append({
+                "query_name": query_key,
+                "matched": template,
+                "confidence": match_entry.get("confidence", 0.0) if match_entry else 0.0,
+                "enhanced_fields": {},
+            })
+
+        if any(r["matched"] for r in results):
+            self._save()
+
+        return results
+
+    # ============== 批量保存 ==============
 
     def save_workflow_config(self, config: Any, workflow_name: str = ""):
         """从 WorkflowConfig 保存所有组件模板

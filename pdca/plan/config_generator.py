@@ -201,9 +201,9 @@ class ConfigGenerator:
         """基础转换 + 组件库增强 + 单次LLM优化"""
         config = self.generate(document, workflow_name)
 
-        # 组件库增强：用库中已有模板填充空字段
+        # 组件库增强：优先 LLM 批量语义匹配，回退到关键词匹配
         if self.component_library:
-            config = self._enhance_with_library(config, workflow_name or "unknown")
+            config = self._enhance_with_library(config, llm, workflow_name or "unknown")
 
         if llm is None:
             # LLM 不可用时，仍保存组件到库
@@ -239,8 +239,22 @@ class ConfigGenerator:
 
         return config
 
-    def _enhance_with_library(self, config: WorkflowConfig, workflow_name: str) -> WorkflowConfig:
-        """用组件库中已有模板增强配置（仅填充空字段，不覆盖已有数据）"""
+    def _enhance_with_library(
+        self,
+        config: WorkflowConfig,
+        llm: Optional[OpenAILLM] = None,
+        workflow_name: str = "unknown",
+    ) -> WorkflowConfig:
+        """用组件库增强配置（优先 LLM 批量匹配，回退关键词匹配）"""
+        # 优先：LLM 批量语义匹配
+        if self.component_library._llm:
+            return self.component_library.batch_enhance(config, llm)
+
+        # 回退：旧的关键词逐个匹配（LLM 不可用时）
+        return self._legacy_enhance_with_library(config, workflow_name)
+
+    def _legacy_enhance_with_library(self, config: WorkflowConfig, workflow_name: str) -> WorkflowConfig:
+        """旧的关键词匹配增强（LLM 不可用时的回退方案）"""
         for node in config.nodes:
             match = self.component_library.lookup_node(
                 node.name, node.description or "", node_type=node.type

@@ -353,3 +353,41 @@ COMPONENT_LLM_MATCH_PROMPT = """我需要从组件库中查找与以下需求匹
 }}
 
 如果没有语义上足够接近的匹配，请将match_id设为null。"""
+
+BATCH_MATCH_PROMPT = """你是组件库语义匹配专家。请为以下工作流组件从已有组件库中找到最匹配的模板，并填充缺失信息。
+
+## 待匹配的{category}组件
+
+{queries}
+
+## 组件库中已有的{category}模板
+
+{candidates}
+
+## 匹配规则
+
+1. 语义相似才匹配：功能、用途相近的组件才算匹配（如"获取销售数据" ≈ "fetchSalesData"）
+2. 不匹配不强行匹配：如果没有语义接近的模板，matched_id 设为 null
+3. 只填充空字段：enhanced_fields 中只包含原组件缺失的字段值
+4. 类型必须一致：tool 只匹配 tool，thought 只匹配 thought
+
+## 输出格式
+
+严格输出 JSON，不要任何额外解释：
+```json
+{{
+    "matches": [
+        {{
+            "query_name": "待匹配组件的名称",
+            "matched_id": "匹配到的模板ID，无匹配为null",
+            "confidence": 0.85,
+            "reason": "简短匹配理由",
+            "enhanced_fields": {{
+                "description": "从模板填充的描述（如果原组件缺失）",
+                "inputs": ["从模板填充的输入"],
+                "outputs": ["从模板填充的输出"]
+            }}
+        }}
+    ]
+}}
+```"""

@@ -481,7 +481,7 @@ def run_pdca_cycle(args):
         component_library = ComponentLibrary(
             library_dir=str(args.component_library_dir),
             llm=planner_llm,
-            enable_llm_matching=False,
+            enable_llm_matching=True,
         )
         lib_stats = component_library.get_statistics()
         print(f"\n[Library] 组件库初始化: {lib_stats['total_templates']} 个模板")

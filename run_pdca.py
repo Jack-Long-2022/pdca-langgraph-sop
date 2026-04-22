@@ -447,12 +447,16 @@ def run_pdca_cycle(args):
     planner_llm = get_llm_for_task("extract")  # 会路由到 planner
     executor_llm = get_llm_for_task("code")    # 会路由到 executor
 
-    # 初始化组件库
+    # 初始化组件库（传入 LLM 以启用批量语义匹配）
     component_library = None
     if not args.no_component_library:
-        component_library = ComponentLibrary(library_dir=str(args.component_library_dir))
+        component_library = ComponentLibrary(
+            library_dir=str(args.component_library_dir),
+            llm=planner_llm,
+            enable_llm_matching=True,
+        )
         stats = component_library.get_statistics()
-        print(f"\n[Library] 组件库初始化: {stats['total_templates']} 个模板")
+        print(f"\n[Library] 组件库初始化: {stats['total_templates']} 个模板 (批量语义匹配已启用)")
 
     # 定义目标
     original_goals = [

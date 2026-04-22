@@ -591,3 +591,253 @@ class TestLLMMatching:
         # 全局关闭且调用时不覆盖 → 不走 LLM
         match = lib.lookup_node("完全不相关的查询xyz", use_llm=False)
         assert match is None
+
+
+# ============== 批量语义匹配测试 ==============
+
+class TestBatchMatch:
+
+    def _make_mock_llm(self, template_id: str):
+        """创建返回固定匹配的 Mock LLM"""
+        class MockLLM:
+            def generate_messages(self, messages, **kwargs):
+                return json.dumps({
+                    "matches": [{
+                        "query_name": "获取数据",
+                        "matched_id": template_id,
+                        "confidence": 0.9,
+                        "reason": "语义匹配",
+                        "enhanced_fields": {
+                            "description": "从API获取数据",
+                            "inputs": ["url"],
+                            "outputs": ["data"],
+                        },
+                    }]
+                })
+        return MockLLM()
+
+    def _make_mock_llm_no_match(self):
+        """创建返回无匹配的 Mock LLM"""
+        class MockLLM:
+            def generate_messages(self, messages, **kwargs):
+                return json.dumps({"matches": []})
+        return MockLLM()
+
+    def test_batch_match_basic(self, tmp_path):
+        """基本批量匹配"""
+        lib = ComponentLibrary(library_dir=str(tmp_path / "batch_test"))
+        node = NodeDefinition(
+            node_id="n1", name="获取数据", type="tool",
+            description="从API获取数据", inputs=["url"], outputs=["data"],
+        )
+        lib.save_node(node, "test_workflow")
+        template_id = list(lib._index.nodes.keys())[0]
+
+        config = WorkflowConfig(
+            meta=WorkflowMeta(
+                workflow_id="wf_new", name="new_wf", version="0.1.0",
+                created_at="2026-01-01", updated_at="2026-01-01",
+            ),
+            nodes=[NodeDefinition(node_id="n1", name="获取数据", type="tool")],
+            edges=[], state=[],
+        )
+
+        llm = self._make_mock_llm(template_id)
+        results = lib.batch_match(config, llm=llm)
+
+        assert len(results["nodes"]) == 1
+        assert results["nodes"][0]["query_name"] == "获取数据"
+        assert results["nodes"][0]["confidence"] == 0.9
+
+    def test_batch_match_no_llm(self, tmp_path):
+        """LLM 不可用时返回空结果"""
+        lib = ComponentLibrary(library_dir=str(tmp_path / "batch_no_llm"))
+        config = WorkflowConfig(
+            meta=WorkflowMeta(
+                workflow_id="wf1", name="wf1", version="0.1.0",
+                created_at="2026-01-01", updated_at="2026-01-01",
+            ),
+            nodes=[NodeDefinition(node_id="n1", name="test", type="tool")],
+            edges=[], state=[],
+        )
+        results = lib.batch_match(config, llm=None)
+        assert results["nodes"] == []
+
+    def test_batch_match_empty_config(self, tmp_path):
+        """空配置返回空结果"""
+        lib = ComponentLibrary(library_dir=str(tmp_path / "batch_empty"))
+        config = WorkflowConfig(
+            meta=WorkflowMeta(
+                workflow_id="wf1", name="wf1", version="0.1.0",
+                created_at="2026-01-01", updated_at="2026-01-01",
+            ),
+            nodes=[], edges=[], state=[],
+        )
+        results = lib.batch_match(config, llm=self._make_mock_llm_no_match())
+        assert results["nodes"] == []
+        assert results["edges"] == []
+        assert results["states"] == []
+
+    def test_batch_enhance_fills_missing(self, tmp_path):
+        """批量增强填充缺失字段"""
+        lib = ComponentLibrary(library_dir=str(tmp_path / "enhance_test"))
+        node = NodeDefinition(
+            node_id="n1", name="获取数据", type="tool",
+            description="从API获取数据", inputs=["url"], outputs=["data"],
+        )
+        lib.save_node(node, "test_workflow")
+        template_id = list(lib._index.nodes.keys())[0]
+
+        config = WorkflowConfig(
+            meta=WorkflowMeta(
+                workflow_id="wf_new", name="new_wf", version="0.1.0",
+                created_at="2026-01-01", updated_at="2026-01-01",
+            ),
+            nodes=[NodeDefinition(
+                node_id="n1", name="获取数据", type="tool",
+                description="", inputs=[], outputs=[],
+            )],
+            edges=[], state=[],
+        )
+
+        llm = self._make_mock_llm(template_id)
+        enhanced = lib.batch_enhance(config, llm=llm)
+
+        assert enhanced.nodes[0].description == "从API获取数据"
+        assert enhanced.nodes[0].inputs == ["url"]
+        assert enhanced.nodes[0].outputs == ["data"]
+
+    def test_batch_enhance_does_not_overwrite(self, tmp_path):
+        """批量增强不覆盖已有数据"""
+        lib = ComponentLibrary(library_dir=str(tmp_path / "enhance_no_overwrite"))
+        node = NodeDefinition(
+            node_id="n1", name="获取数据", type="tool",
+            description="旧描述", inputs=["old_url"], outputs=["old_data"],
+        )
+        lib.save_node(node, "test_workflow")
+        template_id = list(lib._index.nodes.keys())[0]
+
+        config = WorkflowConfig(
+            meta=WorkflowMeta(
+                workflow_id="wf_new", name="new_wf", version="0.1.0",
+                created_at="2026-01-01", updated_at="2026-01-01",
+            ),
+            nodes=[NodeDefinition(
+                node_id="n1", name="获取数据", type="tool",
+                description="新描述", inputs=["new_url"], outputs=["new_data"],
+            )],
+            edges=[], state=[],
+        )
+
+        llm = self._make_mock_llm(template_id)
+        enhanced = lib.batch_enhance(config, llm=llm)
+
+        # 已有字段不应被覆盖
+        assert enhanced.nodes[0].description == "新描述"
+        assert enhanced.nodes[0].inputs == ["new_url"]
+
+    def test_batch_match_with_edges(self, tmp_path):
+        """批量匹配包含边"""
+        lib = ComponentLibrary(library_dir=str(tmp_path / "batch_edges"))
+        lib.save_node(NodeDefinition(node_id="n1", name="获取数据", type="tool"), "wf")
+        lib.save_node(NodeDefinition(node_id="n2", name="清洗数据", type="tool"), "wf")
+
+        config = WorkflowConfig(
+            meta=WorkflowMeta(
+                workflow_id="wf1", name="wf1", version="0.1.0",
+                created_at="2026-01-01", updated_at="2026-01-01",
+            ),
+            nodes=[
+                NodeDefinition(node_id="n1", name="获取数据", type="tool"),
+                NodeDefinition(node_id="n2", name="清洗数据", type="tool"),
+            ],
+            edges=[EdgeDefinition(source="n1", target="n2", type="sequential")],
+            state=[],
+        )
+
+        class EdgeMockLLM:
+            def generate_messages(self, messages, **kwargs):
+                return json.dumps({"matches": []})
+
+        results = lib.batch_match(config, llm=EdgeMockLLM())
+        assert len(results["edges"]) == 1
+        # 无 edge 候选时，query_name 使用原始节点 ID
+        assert "n1" in results["edges"][0]["query_name"]
+
+
+class TestConfigGeneratorBatchIntegration:
+
+    def test_batch_enhance_used_when_llm_available(self, tmp_path):
+        """LLM 可用时使用批量匹配"""
+        from pdca.plan.config_generator import ConfigGenerator
+        from pdca.plan.extractor import StructuredDocument, ExtractedNode
+
+        lib = ComponentLibrary(library_dir=str(tmp_path / "batch_int"))
+        node = NodeDefinition(
+            node_id="n1", name="获取数据", type="tool",
+            description="从API获取数据", inputs=["url"], outputs=["data"],
+        )
+        lib.save_node(node, "existing")
+        template_id = list(lib._index.nodes.keys())[0]
+
+        class MockLLM:
+            def generate_messages(self, messages, **kwargs):
+                return json.dumps({
+                    "matches": [{
+                        "query_name": "获取数据",
+                        "matched_id": template_id,
+                        "confidence": 0.9,
+                        "reason": "test",
+                        "enhanced_fields": {
+                            "description": "从API获取数据",
+                            "inputs": ["url"],
+                            "outputs": ["data"],
+                        },
+                    }]
+                })
+
+        lib._llm = MockLLM()
+
+        doc = StructuredDocument(
+            nodes=[ExtractedNode(
+                node_id="n_new", name="获取数据", type="tool",
+                description="", inputs=[], outputs=[], config={},
+            )],
+            edges=[], states=[], raw_text="获取数据",
+        )
+
+        generator = ConfigGenerator(component_library=lib)
+        config = generator._enhance_with_library(
+            generator.generate(doc), MockLLM(), "new_wf"
+        )
+
+        # LLM 批量匹配应填充空字段
+        assert config.nodes[0].description == "从API获取数据"
+
+    def test_legacy_fallback_when_no_llm(self, tmp_path):
+        """LLM 不可用时回退到关键词匹配"""
+        from pdca.plan.config_generator import ConfigGenerator
+        from pdca.plan.extractor import StructuredDocument, ExtractedNode
+
+        lib = ComponentLibrary(library_dir=str(tmp_path / "legacy_int"))
+        node = NodeDefinition(
+            node_id="n1", name="获取数据", type="tool",
+            description="从API获取数据", inputs=["url"], outputs=["data"],
+        )
+        lib.save_node(node, "existing")
+
+        doc = StructuredDocument(
+            nodes=[ExtractedNode(
+                node_id="n_new", name="获取数据", type="tool",
+                description="", inputs=[], outputs=[], config={},
+            )],
+            edges=[], states=[], raw_text="获取数据",
+        )
+
+        generator = ConfigGenerator(component_library=lib)
+        config = generator._enhance_with_library(
+            generator.generate(doc), llm=None, workflow_name="new_wf"
+        )
+
+        # 回退到关键词匹配，也应该能填充
+        assert config.nodes[0].description == "从API获取数据"
