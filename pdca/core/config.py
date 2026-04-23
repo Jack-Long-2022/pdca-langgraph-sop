@@ -17,6 +17,7 @@ class WorkflowMeta(BaseModel):
     name: str = Field(..., description="工作流名称")
     version: str = Field(default="0.1.0", description="版本号，语义化版本格式")
     description: Optional[str] = Field(default=None, description="工作流功能描述")
+    category: str = Field(default="general", description="工作流分类（如 data, auto, qa, integration）")
     created_at: str = Field(..., description="创建时间")
     updated_at: str = Field(..., description="最后更新时间")
 

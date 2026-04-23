@@ -13,9 +13,11 @@
 import argparse
 import json
 import os
+import re
 from pathlib import Path
 from datetime import datetime
 from dotenv import load_dotenv
+import yaml
 
 load_dotenv()
 
@@ -29,6 +31,92 @@ from pdca.check.evaluator import run_evaluation
 from pdca.act.reviewer import GRBARPReviewer, OptimizationGenerator
 from pdca.act.loop_controller import create_loop_controller
 from pdca.core.component_library import ComponentLibrary
+
+
+def _sanitize_name(name: str, max_length: int = 30) -> str:
+    """清理工作流名称用于文件夹命名
+
+    - 移除特殊字符，只保留中文、字母、数字、下划线
+    - 截断到 max_length
+    """
+    sanitized = re.sub(r'[^\w\u4e00-\u9fff]', '_', name)
+    sanitized = re.sub(r'_+', '_', sanitized).strip('_')
+    return sanitized[:max_length] if len(sanitized) > max_length else sanitized
+
+
+def generate_output_folder_name(config, iteration: int, output_base: Path) -> str:
+    """生成语义化的产出物文件夹名称
+
+    格式: {seq:03d}_{category}_{sanitized_name}_v{version}
+
+    Args:
+        config: WorkflowConfig 实例
+        iteration: 当前迭代序号
+        output_base: 输出根目录
+
+    Returns:
+        文件夹名称字符串
+    """
+    category = config.meta.category or "general"
+    sanitized = _sanitize_name(config.meta.name)
+    version = config.meta.version
+
+    # 确定序号：使用 iteration 作为序号，保持与 PDCA 迭代一致
+    return f"{iteration:03d}_{category}_{sanitized}_v{version}"
+
+
+def update_output_index(output_base: Path, folder_name: str, config, report=None) -> None:
+    """更新产出物索引文件 (index.yaml)
+
+    遵循渐进式披露设计：
+    - 第一层：folder（文件夹名，即工作流标识）
+    - 第二层：name + description（概要信息）
+    - 第三层：nodes, version, pass_rate 等详细指标
+
+    Args:
+        output_base: 输出根目录
+        folder_name: 当前迭代的文件夹名称
+        config: WorkflowConfig 实例
+        report: EvaluationReport 实例（可选）
+    """
+    index_path = output_base / "index.yaml"
+
+    # 读取已有索引
+    existing = {"workflows": []}
+    if index_path.exists():
+        with open(index_path, 'r', encoding='utf-8') as f:
+            existing = yaml.safe_load(f) or {"workflows": []}
+
+    # 构建当前条目
+    entry = {
+        "folder": folder_name,
+        "name": config.meta.name,
+        "description": config.meta.description,
+        "category": config.meta.category or "general",
+        "version": config.meta.version,
+        "nodes": len(config.nodes),
+        "created_at": datetime.now().isoformat(timespec='seconds'),
+    }
+
+    if report:
+        entry["pass_rate"] = round(report.pass_rate, 1)
+        entry["status"] = "completed"
+
+    # 如果已存在同名 folder 则更新，否则追加
+    workflows = existing.get("workflows", [])
+    for i, wf in enumerate(workflows):
+        if wf.get("folder") == folder_name:
+            workflows[i] = entry
+            break
+    else:
+        workflows.append(entry)
+
+    existing["workflows"] = workflows
+
+    # 写入索引
+    output_base.mkdir(parents=True, exist_ok=True)
+    with open(index_path, 'w', encoding='utf-8') as f:
+        yaml.dump(existing, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
 
 
 def parse_args():
@@ -90,6 +178,11 @@ def parse_args():
         "--no-component-library",
         action="store_true",
         help="禁用组件库"
+    )
+    parser.add_argument(
+        "--category", "-c",
+        default="general",
+        help="工作流分类（如 data, auto, qa, integration）"
     )
 
     return parser.parse_args()
@@ -487,12 +580,15 @@ def run_pdca_cycle(args):
             component_library=component_library,
         )
 
+        # 注入命令行指定的分类
+        config.meta.category = args.category
+
         # === DO ===
+        folder_name = generate_output_folder_name(config, iteration, args.output)
+        output_dir = args.output / folder_name
         if not args.skip_do:
-            output_dir = args.output / f"iteration_{iteration}"
             generated_files = do_phase(config, output_dir, args.verbose, llm=executor_llm)
         else:
-            output_dir = args.output / f"iteration_{iteration}"
             output_dir.mkdir(parents=True, exist_ok=True)
 
         # === CHECK ===
@@ -520,6 +616,10 @@ def run_pdca_cycle(args):
             pass_rate=report.pass_rate,
             issues_found=len(report.issues)
         )
+
+        # 更新产出物索引
+        update_output_index(args.output, folder_name, config, report)
+        print(f"\n[Index] 索引已更新: {args.output / 'index.yaml'}")
 
         # 检查是否达到质量阈值
         if report.pass_rate >= args.quality_threshold:
