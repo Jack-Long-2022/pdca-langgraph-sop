@@ -52,14 +52,6 @@ class TestProjectTemplate:
         assert "tool" in template
         assert "handle_node_001" in template
     
-    def test_get_workflow_runner_template(self):
-        """测试工作流运行器模板"""
-        template = ProjectTemplate.get_workflow_runner_template()
-        
-        assert "WorkflowRunner" in template
-        assert "def run(" in template
-        assert "def _execute_node(" in template
-    
     def test_get_tool_template(self):
         """测试工具模板"""
         template = ProjectTemplate.get_tool_template()
@@ -68,26 +60,6 @@ class TestProjectTemplate:
         assert "http_request" in template
         assert "json_parser" in template
     
-    def test_get_readme_template(self):
-        """测试README模板"""
-        template = ProjectTemplate.get_readme_template(
-            workflow_name="测试工作流",
-            description="测试描述",
-            node_descriptions="- 节点1",
-            edge_descriptions="- 边1",
-            version="1.0.0"
-        )
-        
-        assert "测试工作流" in template
-        assert "测试描述" in template
-    
-    def test_get_requirements_template(self):
-        """测试requirements模板"""
-        template = ProjectTemplate.get_requirements_template()
-        
-        assert "langgraph" in template
-        assert "pdca" in template
-
 
 class TestNodeCodeGenerator:
     """NodeCodeGenerator测试"""
@@ -179,13 +151,12 @@ class TestCodeGenerator:
     def test_create_directories(self, tmp_path):
         """测试目录创建"""
         generator = CodeGenerator()
-        
+
         test_dir = tmp_path / "test_project"
         generator._create_directories(test_dir)
-        
+
         assert test_dir.exists()
         assert (test_dir / "nodes").exists()
-        assert (test_dir / "tests").exists()
         assert (test_dir / "config").exists()
     
     def test_write_file(self, tmp_path):
@@ -201,36 +172,36 @@ class TestCodeGenerator:
     def test_generate_project(self, sample_config, tmp_path):
         """测试项目生成"""
         generator = CodeGenerator()
-        
+
         output_dir = tmp_path / "generated_project"
         result = generator.generate_project(sample_config, output_dir)
-        
-        # 验证生成的文件
-        assert len(result) > 0
+
+        # 验证生成的核心文件（3样东西）
+        assert len(result) == 3
         assert (output_dir / "main.py").exists()
-        assert (output_dir / "README.md").exists()
-        assert (output_dir / "requirements.txt").exists()
         assert (output_dir / "config" / "workflow.json").exists()
-        assert (output_dir / "nodes" / "start.py").exists()
-        assert (output_dir / "nodes" / "process.py").exists()
-        assert (output_dir / "nodes" / "end.py").exists()
+        assert (output_dir / "nodes" / "workflow_graph.py").exists()
+
+        # 验证不生成多余文件
+        assert not (output_dir / "README.md").exists()
+        assert not (output_dir / "requirements.txt").exists()
+        assert not (output_dir / "pdca").exists()
+        assert not (output_dir / "tests").exists()
     
     def test_generate_project_creates_valid_files(self, sample_config, tmp_path):
         """测试生成有效文件"""
         generator = CodeGenerator()
-        
+
         output_dir = tmp_path / "generated_project"
         generator.generate_project(sample_config, output_dir)
-        
+
         # 验证main.py可以编译
         main_file = output_dir / "main.py"
         compile(main_file.read_text(), str(main_file), 'exec')
-        
-        # 验证README包含正确信息
-        readme = (output_dir / "README.md").read_text()
-        assert "测试工作流" in readme
-        assert "开始" in readme
-        assert "处理" in readme
+
+        # 验证workflow_graph.py包含节点函数
+        graph_code = (output_dir / "nodes" / "workflow_graph.py").read_text()
+        assert "WorkflowState" in graph_code
 
 
 class TestWorkflowBuilder:
