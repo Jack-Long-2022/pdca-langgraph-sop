@@ -202,31 +202,35 @@ enum class SignalState : vfc::uint8_t
 
 {
   "sheet_name": "input_bodyInformation",
-  "icatch_name": "vehicleInputbodyInformation.m_combSwLightMode",
-  "row_number": 21,
-  "signal_name": "m_combSwLightMode",
-  "signal_type": "CombinedSwitchLightModeAppSignal",
-  "base_data_type": "CombinedSwitchLightMode",
-  "initial_value": "CombinedSwitchLightMode::faultMode",
+  "icatch_name": "vehicleInputbodyInformation.m_combSwWiperFrontState",
+  "row_number": 23,
+  "signal_name": "m_combSwWiperFrontState",
+  "signal_type": "CombinedSwitchWiperFrontStateAppSignal",
+  "base_data_type": "CombinedSwitchWiperFrontState",
+  "initial_value": "CombinedSwitchWiperFrontState::off",
   "description": "",
   "unit": "N.A.",
-  "can_message": "FLZCU_15",
-  "can_signal_name": "FLZCU_HMASwSts",
+  "can_message": "FLZCU_12",
+  "can_signal_name": "FLZCU_FrontWiperWipingStatus",
   "mapping_rule": [
-    "[$CAN_RawValue::0 @CombinedSwitchLightMode:: Fault mode]",
-    "[$CAN_RawValue::1 @CombinedSwitchLightMode:: Automatic mode]"
+    "[$CAN_RawValue::0 @CombinedSwitchWiperFrontState::off]",
+    "[$CAN_RawValue::1 @CombinedSwitchWiperFrontState:: low]",
+    "[$CAN_RawValue::2 @CombinedSwitchWiperFrontState:: high]",
+    "[$CAN_RawValue::3 @CombinedSwitchWiperFrontState:: autoLow]",
+    "2026-03-27\uff1a",
+    "\u5ba2\u6237\u66f4\u65b0\u4e86matrix\uff0c\u6dfb\u52a0\u4e86\u679a\u4e3e\u503cauto, \u9700\u8981\u8ddf\u5ba2\u6237review\u3002\u56e0\u4e3aauto\u6863\u65e0\u6cd5\u8868\u660e\u5f53\u524d\u96e8\u522e\u662f\u4f4e\u901f\u8fd8\u662f\u9ad8\u901f\u3002"
   ],
   "range_min": null,
   "range_max": null,
-  "error_state_set": "",
+  "error_state_set": "# N.A.",
   "error_state_trigged_condition": [],
-  "comment": "SHI Yixiang Updated on 2026-01-26",
+  "comment": "",
   "feature_flags": {
-    "Driving FCT": false,
-    "ACC": false,
-    "AEB": false,
+    "Driving FCT": true,
+    "ACC": true,
+    "AEB": true,
     "HMA": true,
-    "TSR": false,
+    "TSR": true,
     "Driving EMS": false,
     "Driving Sit": false,
     "Driving Motion": false,
@@ -235,27 +239,29 @@ enum class SignalState : vfc::uint8_t
   "can_channel": null,
   "can_signal_exists": true,
   "can_signal_params": {
-    "message_name": "FLZCU_15",
-    "signal_name": "FLZCU_HMASwSts",
+    "message_name": "FLZCU_12",
+    "signal_name": "FLZCU_FrontWiperWipingStatus",
     "min_value": 0,
-    "max_value": 1,
+    "max_value": 3,
     "default_value": null,
     "offset": 0,
     "factor": 1,
-    "bit_length": 1,
+    "bit_length": 2,
     "unit": "",
     "mux_enable": false,
     "mux_params": null
   },
   "internal_signal_type": "enum",
   "internal_enum_def": {
-    "enum_name": "CombinedSwitchLightMode",
+    "enum_name": "CombinedSwitchWiperFrontState",
     "underlying_type": "vfc::uint8_t",
     "values": {
-      "faultMode": 0,
-      "autoMode": 1,
-      "parkMode": 2,
-      "lowBeamMode": 3
+      "off": 0,
+      "autoLow": 1,
+      "autoHigh": 2,
+      "low": 3,
+      "high": 4,
+      "invalid": 5
     },
     "namespace": "Bci::VehicleGenericInterface"
   },
@@ -263,7 +269,7 @@ enum class SignalState : vfc::uint8_t
   "valid_conditions": null,
   "diagnostics_types": null,
   "test_param_can_signal_pairs_list": [
-    "FLZCU_15.FLZCU_HMASwSts"
+    "FLZCU_12.FLZCU_FrontWiperWipingStatus"
   ],
   "test_param_internal_signal_initial_value": 0.0
 }

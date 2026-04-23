@@ -59,6 +59,10 @@ cp .env.example .env
 
 ### 运行
 
+方式1：
+/prompt-to-langgraph 把提示词文件 @examples\input.md 转成langgraph工作流
+
+方式2：
 ```bash
 # 稳定场景：快速生成 + 组件库复用
 python run_pdca.py --input examples/input.md --output output -v
