@@ -43,7 +43,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from nodes.workflow_graph import build_workflow, WorkflowState
+from nodes.workflow_graph import build_workflow, WorkflowState, create_initial_state
 
 
 def parse_args():
@@ -59,29 +59,33 @@ def load_initial_state(config_path: str = None, input_path: str = None) -> dict:
     """加载初始工作流状态
 
     优先级:
-    1. config_path 指定的JSON文件
-    2. input_path 读取为文本输入到 'input' 字段
-    3. 返回空字典（让节点自行初始化）
+    1. 使用 create_initial_state() 初始化默认字段
+    2. input_path 读取为JSON/文本 -> 作为 raw_input
+    3. config_path 指定的JSON文件 -> 作为 raw_input
     """
-    initial_state = {{}}
-
-    if config_path:
-        config_file = Path(config_path)
-        if config_file.exists():
-            with open(config_file, 'r', encoding='utf-8') as f:
-                initial_state.update(json.load(f))
-            print(f"已加载配置文件: {{config_path}}")
-        else:
-            print(f"警告: 配置文件不存在: {{config_path}}")
+    initial_state = create_initial_state()
 
     if input_path:
         input_file = Path(input_path)
         if input_file.exists():
             with open(input_file, 'r', encoding='utf-8') as f:
-                initial_state['input'] = f.read()
+                content = f.read().strip()
+            try:
+                initial_state['raw_input'] = json.loads(content)
+            except json.JSONDecodeError:
+                initial_state['raw_input'] = content
             print(f"已读取输入文件: {{input_path}}")
         else:
             print(f"警告: 输入文件不存在: {{input_path}}")
+
+    if config_path:
+        config_file = Path(config_path)
+        if config_file.exists():
+            with open(config_file, 'r', encoding='utf-8') as f:
+                initial_state['raw_input'] = json.load(f)
+            print(f"已加载配置文件: {{config_path}}")
+        else:
+            print(f"警告: 配置文件不存在: {{config_path}}")
 
     return initial_state
 

@@ -58,28 +58,37 @@ description: Convert natural language descriptions (voice input, casual speech, 
 **节点分类决策树**：
 ```
 是否涉及外部系统调用？(API、数据库、文件、邮件、搜索等)
-├─ 是 → tool_node (工具节点)
+├─ 是 → type: "tool" (工具节点)
 └─ 否 → 是否需要LLM推理或生成？
-    ├─ 是 → thinking_node (思维节点)
+    ├─ 是 → type: "thought" (思维节点)
     └─ 否 → 是否控制执行流程？
-        ├─ 是 → control_node (控制节点)
+        ├─ 是 → type: "control" (控制节点)
         └─ 否 → 需要人工判断或标记为待定
 ```
 
-**节点属性模板**：
+**节点属性模板**（必须匹配 NodeDefinition Pydantic 模型）：
 ```json
 {
   "node_id": "node_{type}_{sequence}",
-  "node_name": "节点显示名称",
-  "node_type": "tool_node|thinking_node|control_node",
-  "node_subtype": "具体子类型",
+  "name": "节点显示名称",
+  "type": "tool|thought|control",
   "description": "节点功能的详细描述（至少10字）",
-  "input_schema": {"fields": [{"name": "...", "type": "...", "required": true}]},
-  "output_schema": {"fields": [{"name": "...", "type": "..."}]},
-  "config": {},
-  "metadata": {"source_text": "来源文本", "inference_type": "explicit|implicit"}
+  "inputs": ["input_field_1", "input_field_2"],
+  "outputs": ["output_field_1"],
+  "config": {
+    "node_subtype": "具体子类型（如 input_node, analysis, api_call）",
+    "input_schema_detail": {"fields": [{"name": "...", "type": "...", "required": true}]},
+    "output_schema_detail": {"fields": [{"name": "...", "type": "..."}]},
+    "source_text": "来源文本片段",
+    "inference_type": "explicit|implicit"
+  }
 }
 ```
+
+**节点类型枚举值（type 字段，只能是以下三种）：**
+- `control` — 控制节点（对应旧 `control_node`）
+- `thought` — 思维节点（对应旧 `thinking_node`）
+- `tool` — 工具节点（对应旧 `tool_node`）
 
 ### 第三步：边关系识别
 
@@ -178,45 +187,64 @@ description: Convert natural language descriptions (voice input, casual speech, 
 ```
 
 #### Part 2: 配置输出 (config)
+
+**此部分必须严格匹配 WorkflowConfig Pydantic 模型结构**，以便下游 Do/Check/Act 管道直接加载。
+
 ```json
 {
-  "workflow_id": "wf_xxx_xxx",
-  "workflow_name": "工作流名称",
-  "description": "工作流详细描述（至少20字）",
-  "version": "1.0.0",
-  "metadata": {
-    "author": "AI Assistant",
+  "meta": {
+    "workflow_id": "wf_xxx_xxx",
+    "name": "工作流名称",
+    "version": "1.0.0",
+    "description": "工作流详细描述（至少20字）",
+    "category": "general",
     "created_at": "2024-01-15T10:30:00Z",
-    "source_input": "原始输入文本"
+    "updated_at": "2024-01-15T10:30:00Z"
   },
   "nodes": [
     {
       "node_id": "node_control_001",
-      "node_name": "输入准备",
-      "node_type": "control_node",
-      "node_subtype": "input_node",
+      "name": "输入准备",
+      "type": "control",
       "description": "接收并验证用户输入",
-      "input_schema": {"fields": [{"name": "raw_input", "type": "object", "required": true}]},
-      "output_schema": {"fields": [{"name": "validated_input", "type": "object", "required": true}]},
-      "metadata": {"inference_type": "implicit"}
+      "inputs": ["raw_input"],
+      "outputs": ["validated_input"],
+      "config": {
+        "node_subtype": "input_node",
+        "input_schema_detail": {"fields": [{"name": "raw_input", "type": "object", "required": true}]},
+        "output_schema_detail": {"fields": [{"name": "validated_input", "type": "object", "required": true}]},
+        "source_text": "原始描述片段",
+        "inference_type": "implicit"
+      }
     }
   ],
   "edges": [
     {
-      "edge_id": "edge_input_xxx_sequential",
       "source": "node_control_001",
       "target": "node_tool_001",
-      "edge_type": "sequential"
+      "condition": null,
+      "type": "sequential"
+    },
+    {
+      "source": "node_control_001",
+      "target": "node_tool_002",
+      "condition": "can_signal_exists == true",
+      "type": "conditional"
     }
   ],
-  "state_schema": {
-    "fields": [
-      {"name": "query", "type": "string", "required": true, "description": "搜索关键词", "state_type": "input"}
-    ]
-  },
-  "entry_point": "node_control_001",
-  "finish_point": "node_control_002",
+  "state": [
+    {
+      "field_name": "raw_input",
+      "type": "object",
+      "default_value": null,
+      "description": "原始输入数据",
+      "required": true
+    }
+  ],
   "config": {
+    "entry_point": "node_control_001",
+    "finish_point": "node_control_002",
+    "source_input": "用户的原始输入文本",
     "timeout": 300000,
     "max_retries": 3,
     "enable_checkpoint": true,
@@ -224,6 +252,30 @@ description: Convert natural language descriptions (voice input, casual speech, 
   }
 }
 ```
+
+**字段映射规则（必须严格遵守）：**
+
+| 旧字段（已废弃） | 新字段 | 说明 |
+|---|---|---|
+| `workflow_id` (顶层) | `meta.workflow_id` | 移入 meta |
+| `workflow_name` | `meta.name` | 字段名变更 |
+| `metadata.author` | 删除 | 不在 WorkflowConfig 中 |
+| `metadata.source_input` | `config.source_input` | 移入 config |
+| `node_name` | `name` | 字段名变更 |
+| `node_type: control_node` | `type: "control"` | 枚举值简化 |
+| `node_type: thinking_node` | `type: "thought"` | 枚举值简化 |
+| `node_type: tool_node` | `type: "tool"` | 枚举值简化 |
+| `node_subtype` | `config.node_subtype` | 移入节点 config |
+| `input_schema` | `inputs` (简化列表) + `config.input_schema_detail` | inputs 只保留字段名列表，完整 schema 移入 config |
+| `output_schema` | `outputs` (简化列表) + `config.output_schema_detail` | 同上 |
+| `metadata.source_text` | `config.source_text` | 移入节点 config |
+| `metadata.inference_type` | `config.inference_type` | 移入节点 config |
+| `edge_id` | 删除 | 不在 EdgeDefinition 中 |
+| `edge_type` | `type` | 字段名变更 |
+| `condition: {expression, description}` | `condition: "expression"` | 嵌套→扁平字符串 |
+| `state_schema.fields[].name` | `state[].field_name` | 容器展开+字段名变更 |
+| `state_schema.fields[].state_type` | `config.state_type` (或删除) | 不在 StateDefinition 中 |
+| `entry_point` / `finish_point` | `config.entry_point` / `config.finish_point` | 移入 config |
 
 ## 质量检查清单
 
@@ -311,14 +363,33 @@ description: Convert natural language descriptions (voice input, casual speech, 
 - 使用 `workflow_id` 作为文件名（如 `wf_xxx_xxx.json`）
 - 使用 Write 工具写入文件
 - JSON 必须包含 `analysis` 和 `config` 两个顶层键
-- `config.metadata.source_input` 必须保存用户的原始输入文本
+- `config` 部分必须严格匹配 `WorkflowConfig` Pydantic 模型结构（见 Part 2 模板）
+- `config.config.source_input` 必须保存用户的原始输入文本
 
 示例目录结构:
 ```
 config/
 └── extractions/
-    ├── wf_search_report.json
-    └── wf_approval_flow.json
+    ├── wf_ecu_signal_test_gen.json
+    └── wf_search_report.json
+```
+
+**Python 后端加载方式**：
+
+由于 `config` 部分匹配 `WorkflowConfig` Pydantic 模型，下游代码可直接加载：
+
+```python
+import json
+from pdca.core.config import WorkflowConfig
+
+with open("config/extractions/wf_ecu_signal_test_gen.json") as f:
+    data = json.load(f)
+
+# config 部分直接反序列化为 WorkflowConfig
+config = WorkflowConfig(**data["config"])
+
+# analysis 部分作为可选的追踪元数据
+analysis = data.get("analysis", {})
 ```
 
 保存完成后，告知用户文件路径，以便后续通过 Python 代码加载。

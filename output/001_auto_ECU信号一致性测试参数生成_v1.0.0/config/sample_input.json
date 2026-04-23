@@ -1,0 +1,22 @@
+{
+  "signal_name": "EngineSpeed",
+  "can_signal_exists": true,
+  "can_signal_name": "EngineSpeed_CAN",
+  "can_signal_params": {
+    "bit_length": 16,
+    "start_bit": 0,
+    "byte_order": "little_endian",
+    "factor": 0.25,
+    "offset": 0
+  },
+  "range_min": 0,
+  "range_max": 16383,
+  "mapping_rules": [],
+  "timeout_ms": 5000,
+  "notupdate_timeout_ms": 10000,
+  "test_param_internal_signal_initial_value": 0,
+  "error_state_trigged_condition": {
+    "trigger_signal": "EngineSpeed_CAN",
+    "trigger_value": -1
+  }
+}

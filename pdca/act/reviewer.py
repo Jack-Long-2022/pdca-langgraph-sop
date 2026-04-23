@@ -1,6 +1,6 @@
 """复盘分析模块 (Act阶段)
 
-GR/RAVP复盘流程和优化方案生成。
+GRBARP复盘流程和优化方案生成。
 使用单次LLM调用完成复盘+优化（原2次合并为1次）。
 """
 
@@ -77,7 +77,7 @@ class ValidationPlanningResult:
 
 
 class GRBARPReviewResult(BaseModel):
-    """GR/RAVP复盘完整结果"""
+    """GRBARP复盘完整结果"""
     workflow_name: str = Field(default="", description="工作流名称")
     review_date: str = Field(default="", description="复盘日期")
     phase: str = Field(default="", description="当前阶段")
@@ -107,7 +107,7 @@ class OptimizationProposal(BaseModel):
 # ============== 复盘器（单次LLM调用完成复盘+优化） ==============
 
 class GRBARPReviewer:
-    """GR/RAVP复盘器 — 单次LLM调用完成复盘+优化方案"""
+    """GRBARP复盘器 — 单次LLM调用完成复盘+优化方案"""
 
     def __init__(self, llm: Optional[Any] = None, component_library: Optional[Any] = None):
         self.llm = llm
@@ -297,7 +297,7 @@ def run_GRBARP_review(
     llm: Any = None,
     component_library: Any = None,
 ) -> GRBARPReviewResult:
-    """快速执行GR/RAVP复盘"""
+    """快速执行GRBARP复盘"""
     return GRBARPReviewer(llm, component_library=component_library).review(
         workflow_name, original_goals, evaluation_report
     )

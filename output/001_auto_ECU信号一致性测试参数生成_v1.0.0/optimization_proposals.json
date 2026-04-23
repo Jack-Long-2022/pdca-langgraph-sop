@@ -1,0 +1,53 @@
+[
+  {
+    "proposal_id": "opt_1",
+    "title": "达成目标: 未实现100%的测试用例通过，存在单点失败",
+    "description": "制定具体措施确保目标达成",
+    "affected_components": [],
+    "estimated_effort": "",
+    "expected_benefits": [],
+    "risks": [],
+    "priority": "high",
+    "implementation_steps": [
+      "分析原因",
+      "制定计划",
+      "实施",
+      "验证"
+    ],
+    "rollback_plan": ""
+  },
+  {
+    "proposal_id": "opt_2",
+    "title": "达成目标: 边缘场景用例（edge_001）执行失败，未达成完全稳定执行的目标",
+    "description": "制定具体措施确保目标达成",
+    "affected_components": [],
+    "estimated_effort": "",
+    "expected_benefits": [],
+    "risks": [],
+    "priority": "high",
+    "implementation_steps": [
+      "分析原因",
+      "制定计划",
+      "实施",
+      "验证"
+    ],
+    "rollback_plan": ""
+  },
+  {
+    "proposal_id": "opt_3",
+    "title": "达成目标: 缺乏对异常或边缘情况的健壮性处理",
+    "description": "制定具体措施确保目标达成",
+    "affected_components": [],
+    "estimated_effort": "",
+    "expected_benefits": [],
+    "risks": [],
+    "priority": "high",
+    "implementation_steps": [
+      "分析原因",
+      "制定计划",
+      "实施",
+      "验证"
+    ],
+    "rollback_plan": ""
+  }
+]

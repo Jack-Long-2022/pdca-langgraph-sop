@@ -65,7 +65,7 @@ pdca/
 │
 └── act/                  # Act阶段
     ├── loop_controller.py  # 循环控制
-    └── reviewer.py       # GR/RAVP复盘
+    └── reviewer.py       # GRBARP复盘
 ```
 
 ## 核心设计模式
@@ -279,7 +279,7 @@ controller = LoopController(max_iterations=2)
 controller.start(workflow_name)
 ```
 
-**GR/RAVP 复盘流程**:
+**GRBARP 复盘流程**:
 - Goal Review: 目标回顾
 - Result Analysis: 结果分析
 - Action Planning: 行动规划

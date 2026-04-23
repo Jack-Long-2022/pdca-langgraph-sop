@@ -1,0 +1,96 @@
+{
+ "workflow_id": "wf_ecu_signal_test_gen",
+ "name": "ECU信号一致性测试参数生成",
+ "version": "1.0.0",
+ "description": "根据ECU内部信号配置（信号类型、映射规则、CAN参数、状态机定义）自动生成CAN信号与内部信号一致性测试的完整测试参数列表和诊断信息，支持枚举/物理值映射、三路条件分支（信号不存在/Timestamp/完整测试）、状态机驱动测试步骤设计",
+ "node_count": 17,
+ "edge_count": 20,
+ "state_count": 14,
+ "nodes": [
+  {
+   "name": "输入解析",
+   "type": "control",
+   "description": "接收并验证输入JSON信号配置，检查必要字段（signal_name, can_signal_exists, can_signal_params等）的完整性和类型正确性"
+  },
+  {
+   "name": "信号分析器",
+   "type": "thought",
+   "description": "解析信号类型（enum/physical）、映射规则、CAN信号参数、内部枚举定义，计算有效值范围和测试值列表，设置控制标志位"
+  },
+  {
+   "name": "信号存在性路由",
+   "type": "control",
+   "description": "根据can_signal_exists字段决定执行路径：false走初始值检查路径，true走进一步Timestamp检查路径"
+  },
+  {
+   "name": "初始值检查生成器",
+   "type": "thought",
+   "description": "当CAN信号不存在时，生成check_init_value测试步骤：验证内部信号数值等于test_param_internal_signal_initial_value，状态值等于2(valid)"
+  },
+  {
+   "name": "Timestamp信号路由",
+   "type": "control",
+   "description": "检查信号名是否以Timestamp结尾，决定走精简策略（message-received）还是完整测试流程"
+  },
+  {
+   "name": "消息到达处理器",
+   "type": "thought",
+   "description": "为Timestamp类型信号生成精简测试步骤：验证报文到达后内部状态进入valid(2)，内部值满足已更新语义"
+  },
+  {
+   "name": "Setup生成器",
+   "type": "thought",
+   "description": "生成测试用例setup步骤：设置CAN信号使内部信号状态进入valid(2)，使用有效范围内的值作为初始CAN信号值"
+  },
+  {
+   "name": "Valid场景生成器",
+   "type": "thought",
+   "description": "生成valid场景测试步骤：枚举类型遍历所有映射规则中的值，物理值类型使用最小值-中间值-最大值-最小值序列，对未覆盖值补充独立步骤"
+  },
+  {
+   "name": "NotUpdate超时生成器",
+   "type": "thought",
+   "description": "生成notUpdate-timeout测试步骤：设置主要CAN信号为[-1]（不发送），辅助信号保持非senderError状态值，验证内部信号状态变为notUpdate(3)"
+  },
+  {
+   "name": "错误条件路由",
+   "type": "control",
+   "description": "检查error_state_trigged_condition是否定义（非空），决定是否生成senderError测试步骤"
+  },
+  {
+   "name": "SenderError生成器",
+   "type": "thought",
+   "description": "根据error_state_trigged_condition定义的触发条件，生成senderError测试步骤：设置对应CAN信号值触发senderError状态，验证内部信号状态变为senderError(4)"
+  },
+  {
+   "name": "Valid2中间恢复",
+   "type": "thought",
+   "description": "生成valid2中间恢复步骤：将信号状态恢复到valid(2)，设置CAN信号为最大值，为后续out-of-range测试做准备"
+  },
+  {
+   "name": "OutOfRange适用性路由",
+   "type": "control",
+   "description": "比较bit_length计算的物理范围与用户输入的range_min/range_max，判断out-of-range测试是否适用"
+  },
+  {
+   "name": "NotUpdate越界生成器",
+   "type": "thought",
+   "description": "生成notUpdate2越界测试步骤：设置CAN信号值为超出用户定义range范围但仍在DBC范围内的值，验证内部信号状态变为notUpdate(3)"
+  },
+  {
+   "name": "最终Teardown",
+   "type": "thought",
+   "description": "生成最终teardown步骤：恢复信号状态为valid(2)，设置CAN信号为最小值，完成整个测试流程"
+  },
+  {
+   "name": "诊断信息生成器",
+   "type": "thought",
+   "description": "汇总所有前序节点产生的诊断信息，补充整体推断、疑问和建议，确保所有推断过程中的疑点被记录到diagnostics_types"
+  },
+  {
+   "name": "输出格式化",
+   "type": "control",
+   "description": "将test_parameters和diagnostics_types组装为标准JSON输出格式，确保无Markdown标记、无解释文字、所有字段有值"
+  }
+ ]
+}

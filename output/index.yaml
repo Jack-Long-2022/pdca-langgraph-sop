@@ -1,0 +1,10 @@
+workflows:
+- folder: 001_auto_ECU信号一致性测试参数生成_v1.0.0
+  name: ECU信号一致性测试参数生成
+  description: 根据ECU内部信号配置（信号类型、映射规则、CAN参数、状态机定义）自动生成CAN信号与内部信号一致性测试的完整测试参数列表和诊断信息，支持枚举/物理值映射、三路条件分支（信号不存在/Timestamp/完整测试）、状态机驱动测试步骤设计
+  category: auto
+  version: 1.0.0
+  nodes: 17
+  created_at: '2026-04-23T22:40:55'
+  pass_rate: 80.0
+  status: completed

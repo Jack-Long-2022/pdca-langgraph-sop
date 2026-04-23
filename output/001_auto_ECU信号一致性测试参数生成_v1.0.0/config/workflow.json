@@ -1,0 +1,1236 @@
+{
+  "meta": {
+    "workflow_id": "wf_ecu_signal_test_gen",
+    "name": "ECU信号一致性测试参数生成",
+    "version": "1.0.0",
+    "description": "根据ECU内部信号配置（信号类型、映射规则、CAN参数、状态机定义）自动生成CAN信号与内部信号一致性测试的完整测试参数列表和诊断信息，支持枚举/物理值映射、三路条件分支（信号不存在/Timestamp/完整测试）、状态机驱动测试步骤设计",
+    "category": "auto",
+    "created_at": "2026-04-23T10:00:00Z",
+    "updated_at": "2026-04-23T10:00:00Z"
+  },
+  "nodes": [
+    {
+      "node_id": "node_control_001",
+      "name": "输入解析",
+      "type": "control",
+      "description": "接收并验证输入JSON信号配置，检查必要字段（signal_name, can_signal_exists, can_signal_params等）的完整性和类型正确性",
+      "inputs": [
+        "raw_input"
+      ],
+      "outputs": [
+        "validated_input",
+        "validation_errors"
+      ],
+      "config": {
+        "required_fields": [
+          "signal_name",
+          "base_data_type",
+          "initial_value",
+          "can_signal_exists",
+          "can_signal_params",
+          "internal_signal_type",
+          "test_param_can_signal_pairs_list",
+          "test_param_internal_signal_initial_value",
+          "mapping_rule",
+          "error_state_trigged_condition"
+        ],
+        "node_subtype": "input_node",
+        "input_schema_detail": {
+          "fields": [
+            {
+              "name": "raw_input",
+              "type": "object",
+              "required": true,
+              "description": "用户输入的完整JSON信号配置对象"
+            }
+          ]
+        },
+        "output_schema_detail": {
+          "fields": [
+            {
+              "name": "validated_input",
+              "type": "object",
+              "required": true,
+              "description": "验证通过后的输入JSON对象"
+            },
+            {
+              "name": "validation_errors",
+              "type": "array",
+              "required": false,
+              "description": "验证过程中发现的字段缺失或类型错误列表"
+            }
+          ]
+        },
+        "source_text": "用户输入的json格式的字段信息",
+        "inference_type": "implicit"
+      }
+    },
+    {
+      "node_id": "node_thinking_001",
+      "name": "信号分析器",
+      "type": "thought",
+      "description": "解析信号类型（enum/physical）、映射规则、CAN信号参数、内部枚举定义，计算有效值范围和测试值列表，设置控制标志位",
+      "inputs": [
+        "validated_input"
+      ],
+      "outputs": [
+        "parsed_signal",
+        "signal_type",
+        "can_signal_exists",
+        "is_timestamp_signal",
+        "has_error_condition",
+        "out_of_range_applicable",
+        "mapping_rules",
+        "valid_values",
+        "diagnostics_types"
+      ],
+      "config": {
+        "prompt_template": "分析输入JSON信号配置：1) 识别信号类型（enum/physical）2) 解析mapping_rule中的映射关系 3) 根据signal_type确定测试值策略（枚举遍历全部/物理值取min-mid-max-min）4) 检查signal_name是否以Timestamp结尾 5) 判断error_state_trigged_condition是否非空 6) 比较bit_length物理范围与range_min/max判断out-of-range适用性 7) 对mapping_rule中未覆盖的值生成diagnostics记录",
+        "analysis_rules": [
+          "枚举类型：严格匹配internal_enum_def和mapping_rule",
+          "物理值类型：按转换规则phy_value = raw_value × factor + offset处理",
+          "离散有限值集合：valid场景遍历全部有效值",
+          "bit_length范围 vs range_min/max范围比较判定out-of-range适用性"
+        ],
+        "node_subtype": "analysis",
+        "input_schema_detail": {
+          "fields": [
+            {
+              "name": "validated_input",
+              "type": "object",
+              "required": true,
+              "description": "验证后的输入JSON"
+            }
+          ]
+        },
+        "output_schema_detail": {
+          "fields": [
+            {
+              "name": "parsed_signal",
+              "type": "object",
+              "required": true,
+              "description": "解析后的信号结构化信息"
+            },
+            {
+              "name": "signal_type",
+              "type": "string",
+              "required": true,
+              "description": "信号类型：enum或physical"
+            },
+            {
+              "name": "can_signal_exists",
+              "type": "boolean",
+              "required": true,
+              "description": "CAN信号是否存在"
+            },
+            {
+              "name": "is_timestamp_signal",
+              "type": "boolean",
+              "required": true,
+              "description": "是否为Timestamp类型信号"
+            },
+            {
+              "name": "has_error_condition",
+              "type": "boolean",
+              "required": true,
+              "description": "是否有senderError触发条件"
+            },
+            {
+              "name": "out_of_range_applicable",
+              "type": "boolean",
+              "required": true,
+              "description": "out-of-range测试是否适用"
+            },
+            {
+              "name": "mapping_rules",
+              "type": "array",
+              "required": true,
+              "description": "解析后的映射规则列表"
+            },
+            {
+              "name": "valid_values",
+              "type": "array",
+              "required": true,
+              "description": "有效测试值列表"
+            },
+            {
+              "name": "diagnostics_types",
+              "type": "array",
+              "required": false,
+              "description": "分析过程中产生的诊断信息"
+            }
+          ]
+        },
+        "source_text": "internal_signal_type / mapping_rule / internal_enum_def / can_signal_params字段定义",
+        "inference_type": "explicit"
+      }
+    },
+    {
+      "node_id": "node_control_002",
+      "name": "信号存在性路由",
+      "type": "control",
+      "description": "根据can_signal_exists字段决定执行路径：false走初始值检查路径，true走进一步Timestamp检查路径",
+      "inputs": [
+        "can_signal_exists"
+      ],
+      "outputs": [
+        "route_decision"
+      ],
+      "config": {
+        "conditions": [
+          {
+            "expression": "can_signal_exists == false",
+            "target": "node_thinking_002",
+            "label": "non_existent"
+          },
+          {
+            "expression": "can_signal_exists == true",
+            "target": "node_control_003",
+            "label": "exists"
+          }
+        ],
+        "node_subtype": "condition_node",
+        "input_schema_detail": {
+          "fields": [
+            {
+              "name": "can_signal_exists",
+              "type": "boolean",
+              "required": true,
+              "description": "CAN信号是否存在标志"
+            }
+          ]
+        },
+        "output_schema_detail": {
+          "fields": [
+            {
+              "name": "route_decision",
+              "type": "string",
+              "required": true,
+              "description": "路由决策：non_existent或exists"
+            }
+          ]
+        },
+        "source_text": "字段can_signal_exists为true/false的执行过程",
+        "inference_type": "explicit"
+      }
+    },
+    {
+      "node_id": "node_thinking_002",
+      "name": "初始值检查生成器",
+      "type": "thought",
+      "description": "当CAN信号不存在时，生成check_init_value测试步骤：验证内部信号数值等于test_param_internal_signal_initial_value，状态值等于2(valid)",
+      "inputs": [
+        "parsed_signal",
+        "test_param_internal_signal_initial_value"
+      ],
+      "outputs": [
+        "test_parameters",
+        "diagnostics_types"
+      ],
+      "config": {
+        "prompt_template": "生成check_init_value测试步骤：tag='check_init_value', test_param_m_value=test_param_internal_signal_initial_value, test_param_m_state=2, test_param_phy_value=[], test_param_raw_value=[]",
+        "output_template": {
+          "tag": "check_init_value",
+          "test_param_m_value": "{test_param_internal_signal_initial_value}",
+          "test_param_m_state": 2,
+          "test_param_phy_value": [],
+          "test_param_raw_value": []
+        },
+        "node_subtype": "generation",
+        "input_schema_detail": {
+          "fields": [
+            {
+              "name": "parsed_signal",
+              "type": "object",
+              "required": true,
+              "description": "解析后的信号信息"
+            },
+            {
+              "name": "test_param_internal_signal_initial_value",
+              "type": "number",
+              "required": true,
+              "description": "内部信号初始值"
+            }
+          ]
+        },
+        "output_schema_detail": {
+          "fields": [
+            {
+              "name": "test_parameters",
+              "type": "array",
+              "required": true,
+              "description": "生成的测试参数列表（含check_init_value步骤）"
+            },
+            {
+              "name": "diagnostics_types",
+              "type": "array",
+              "required": true,
+              "description": "生成的诊断信息"
+            }
+          ]
+        },
+        "source_text": "check_init_value: 内部信号数值等于test_param_internal_signal_initial_value",
+        "inference_type": "explicit"
+      }
+    },
+    {
+      "node_id": "node_control_003",
+      "name": "Timestamp信号路由",
+      "type": "control",
+      "description": "检查信号名是否以Timestamp结尾，决定走精简策略（message-received）还是完整测试流程",
+      "inputs": [
+        "is_timestamp_signal"
+      ],
+      "outputs": [
+        "route_decision"
+      ],
+      "config": {
+        "conditions": [
+          {
+            "expression": "is_timestamp_signal == true",
+            "target": "node_thinking_003",
+            "label": "timestamp"
+          },
+          {
+            "expression": "is_timestamp_signal == false",
+            "target": "node_thinking_004",
+            "label": "full_test"
+          }
+        ],
+        "node_subtype": "condition_node",
+        "input_schema_detail": {
+          "fields": [
+            {
+              "name": "is_timestamp_signal",
+              "type": "boolean",
+              "required": true,
+              "description": "是否为Timestamp信号"
+            }
+          ]
+        },
+        "output_schema_detail": {
+          "fields": [
+            {
+              "name": "route_decision",
+              "type": "string",
+              "required": true,
+              "description": "路由决策：timestamp或full_test"
+            }
+          ]
+        },
+        "source_text": "若内部信号名已Timestamp结尾，采用精简策略",
+        "inference_type": "explicit"
+      }
+    },
+    {
+      "node_id": "node_thinking_003",
+      "name": "消息到达处理器",
+      "type": "thought",
+      "description": "为Timestamp类型信号生成精简测试步骤：验证报文到达后内部状态进入valid(2)，内部值满足已更新语义",
+      "inputs": [
+        "parsed_signal",
+        "can_signal_params"
+      ],
+      "outputs": [
+        "test_parameters",
+        "diagnostics_types"
+      ],
+      "config": {
+        "prompt_template": "生成message-received测试步骤：tag='message-received', test_param_m_state=2(valid), 根据CAN信号参数设定合理的test_param_phy_value和test_param_raw_value，如果无法精确断言数值则只保留框架可执行的通用断言语义",
+        "notes": "Timestamp信号不伪造精确数值，只验证状态变更语义",
+        "node_subtype": "generation",
+        "input_schema_detail": {
+          "fields": [
+            {
+              "name": "parsed_signal",
+              "type": "object",
+              "required": true,
+              "description": "解析后的信号信息"
+            },
+            {
+              "name": "can_signal_params",
+              "type": "object",
+              "required": true,
+              "description": "CAN信号参数"
+            }
+          ]
+        },
+        "output_schema_detail": {
+          "fields": [
+            {
+              "name": "test_parameters",
+              "type": "array",
+              "required": true,
+              "description": "生成的测试参数列表（含message-received步骤）"
+            },
+            {
+              "name": "diagnostics_types",
+              "type": "array",
+              "required": true,
+              "description": "生成的诊断信息"
+            }
+          ]
+        },
+        "source_text": "message-received: 校验报文到达后内部状态进入有效态",
+        "inference_type": "explicit"
+      }
+    },
+    {
+      "node_id": "node_thinking_004",
+      "name": "Setup生成器",
+      "type": "thought",
+      "description": "生成测试用例setup步骤：设置CAN信号使内部信号状态进入valid(2)，使用有效范围内的值作为初始CAN信号值",
+      "inputs": [
+        "parsed_signal",
+        "valid_values",
+        "mapping_rules"
+      ],
+      "outputs": [
+        "test_parameters",
+        "diagnostics_types"
+      ],
+      "config": {
+        "prompt_template": "生成setup测试步骤：tag='setup', 根据mapping_rules将CAN信号第一个有效值映射为内部信号值，test_param_m_state=2(valid), test_param_phy_value和test_param_raw_value根据test_param_can_signal_pairs_list依次填充",
+        "current_phase": "setup",
+        "node_subtype": "generation",
+        "input_schema_detail": {
+          "fields": [
+            {
+              "name": "parsed_signal",
+              "type": "object",
+              "required": true,
+              "description": "解析后的信号信息"
+            },
+            {
+              "name": "valid_values",
+              "type": "array",
+              "required": true,
+              "description": "有效测试值列表"
+            },
+            {
+              "name": "mapping_rules",
+              "type": "array",
+              "required": true,
+              "description": "映射规则列表"
+            }
+          ]
+        },
+        "output_schema_detail": {
+          "fields": [
+            {
+              "name": "test_parameters",
+              "type": "array",
+              "required": true,
+              "description": "生成的测试参数列表（含setup步骤）"
+            },
+            {
+              "name": "diagnostics_types",
+              "type": "array",
+              "required": false,
+              "description": "setup阶段的诊断信息"
+            }
+          ]
+        },
+        "source_text": "setup: 用例setup操作，使内部信号状态设置为valid状态",
+        "inference_type": "explicit"
+      }
+    },
+    {
+      "node_id": "node_thinking_005",
+      "name": "Valid场景生成器",
+      "type": "thought",
+      "description": "生成valid场景测试步骤：枚举类型遍历所有映射规则中的值，物理值类型使用最小值-中间值-最大值-最小值序列，对未覆盖值补充独立步骤",
+      "inputs": [
+        "parsed_signal",
+        "valid_values",
+        "mapping_rules",
+        "signal_type"
+      ],
+      "outputs": [
+        "test_parameters",
+        "diagnostics_types"
+      ],
+      "config": {
+        "prompt_template": "根据信号类型生成valid场景测试步骤：\n1) 枚举类型：为mapping_rule中每个CAN raw值生成独立步骤，tag格式为valid-{enum_name}，遍历所有映射值\n2) 物理值类型：按最小值-中间值-最大值-最小值序列生成步骤，tag格式为valid-min/valid-mid/valid-max/valid-min-back\n3) 检查有效范围内未被mapping_rule覆盖的值，为每个未覆盖值补充独立步骤，tag格式为valid-uncovered-{value}\n4) 每个步骤的test_param_m_state=2(valid)\n5) phy_value和raw_value根据factor/offset转换公式计算\n6) 将未覆盖值的疑问记录到diagnostics_types",
+        "value_generation_rules": {
+          "enum": "遍历mapping_rule中所有CAN_RawValue对应的内部枚举值",
+          "physical": "取range_min(或min_value)到range_max(或max_value)范围内的最小值、中间值、最大值"
+        },
+        "node_subtype": "generation",
+        "input_schema_detail": {
+          "fields": [
+            {
+              "name": "parsed_signal",
+              "type": "object",
+              "required": true,
+              "description": "解析后的信号信息"
+            },
+            {
+              "name": "valid_values",
+              "type": "array",
+              "required": true,
+              "description": "有效测试值列表"
+            },
+            {
+              "name": "mapping_rules",
+              "type": "array",
+              "required": true,
+              "description": "映射规则列表"
+            },
+            {
+              "name": "signal_type",
+              "type": "string",
+              "required": true,
+              "description": "信号类型"
+            }
+          ]
+        },
+        "output_schema_detail": {
+          "fields": [
+            {
+              "name": "test_parameters",
+              "type": "array",
+              "required": true,
+              "description": "生成的valid场景测试参数列表（可能含多个步骤）"
+            },
+            {
+              "name": "diagnostics_types",
+              "type": "array",
+              "required": true,
+              "description": "未覆盖值的待确认诊断信息"
+            }
+          ]
+        },
+        "source_text": "valid1: 触发相关can信号变化，进行valid场景测试",
+        "inference_type": "explicit"
+      }
+    },
+    {
+      "node_id": "node_thinking_006",
+      "name": "NotUpdate超时生成器",
+      "type": "thought",
+      "description": "生成notUpdate-timeout测试步骤：设置主要CAN信号为[-1]（不发送），辅助信号保持非senderError状态值，验证内部信号状态变为notUpdate(3)",
+      "inputs": [
+        "parsed_signal",
+        "test_param_can_signal_pairs_list"
+      ],
+      "outputs": [
+        "test_parameters",
+        "diagnostics_types"
+      ],
+      "config": {
+        "prompt_template": "生成notUpdate-timeout测试步骤：tag='notUpdate-timeout', 将test_param_can_signal_pairs_list中主要信号的phy_value和raw_value设为[-1]（代表不发送），辅助信号保持当前非senderError状态的值，test_param_m_state=3(notUpdate)",
+        "current_phase": "notUpdate-timeout",
+        "node_subtype": "generation",
+        "input_schema_detail": {
+          "fields": [
+            {
+              "name": "parsed_signal",
+              "type": "object",
+              "required": true,
+              "description": "解析后的信号信息"
+            },
+            {
+              "name": "test_param_can_signal_pairs_list",
+              "type": "array",
+              "required": true,
+              "description": "CAN信号对列表"
+            }
+          ]
+        },
+        "output_schema_detail": {
+          "fields": [
+            {
+              "name": "test_parameters",
+              "type": "array",
+              "required": true,
+              "description": "生成的notUpdate-timeout测试参数"
+            },
+            {
+              "name": "diagnostics_types",
+              "type": "array",
+              "required": false,
+              "description": "诊断信息"
+            }
+          ]
+        },
+        "source_text": "notUpdate-timeout: 把can信号主要信号值设置[-1]代表不发送",
+        "inference_type": "explicit"
+      }
+    },
+    {
+      "node_id": "node_control_004",
+      "name": "错误条件路由",
+      "type": "control",
+      "description": "检查error_state_trigged_condition是否定义（非空），决定是否生成senderError测试步骤",
+      "inputs": [
+        "has_error_condition"
+      ],
+      "outputs": [
+        "route_decision"
+      ],
+      "config": {
+        "conditions": [
+          {
+            "expression": "has_error_condition == true",
+            "target": "node_thinking_007",
+            "label": "execute_sender_error"
+          },
+          {
+            "expression": "has_error_condition == false",
+            "target": "node_thinking_008",
+            "label": "skip_sender_error"
+          }
+        ],
+        "node_subtype": "condition_node",
+        "input_schema_detail": {
+          "fields": [
+            {
+              "name": "has_error_condition",
+              "type": "boolean",
+              "required": true,
+              "description": "是否有senderError触发条件"
+            }
+          ]
+        },
+        "output_schema_detail": {
+          "fields": [
+            {
+              "name": "route_decision",
+              "type": "string",
+              "required": true,
+              "description": "路由决策：skip_sender_error或execute_sender_error"
+            }
+          ]
+        },
+        "source_text": "如果没有定义error_state_trigged_condition，跳过senderError",
+        "inference_type": "explicit"
+      }
+    },
+    {
+      "node_id": "node_thinking_007",
+      "name": "SenderError生成器",
+      "type": "thought",
+      "description": "根据error_state_trigged_condition定义的触发条件，生成senderError测试步骤：设置对应CAN信号值触发senderError状态，验证内部信号状态变为senderError(4)",
+      "inputs": [
+        "parsed_signal",
+        "error_state_trigged_condition"
+      ],
+      "outputs": [
+        "test_parameters",
+        "diagnostics_types"
+      ],
+      "config": {
+        "prompt_template": "根据error_state_trigged_condition生成senderError测试步骤：tag='senderError', 根据触发条件设定对应CAN辅助信号的值使质量信号指示为sender error，test_param_m_state=4(senderError), 根据error_state_set和error_state_trigged_condition描述设定CAN信号值",
+        "current_phase": "senderError",
+        "node_subtype": "generation",
+        "input_schema_detail": {
+          "fields": [
+            {
+              "name": "parsed_signal",
+              "type": "object",
+              "required": true,
+              "description": "解析后的信号信息"
+            },
+            {
+              "name": "error_state_trigged_condition",
+              "type": "array",
+              "required": true,
+              "description": "senderError触发条件列表"
+            }
+          ]
+        },
+        "output_schema_detail": {
+          "fields": [
+            {
+              "name": "test_parameters",
+              "type": "array",
+              "required": true,
+              "description": "生成的senderError测试参数"
+            },
+            {
+              "name": "diagnostics_types",
+              "type": "array",
+              "required": false,
+              "description": "诊断信息"
+            }
+          ]
+        },
+        "source_text": "senderError: 控制相关can信号变化，通过触发senderError逻辑",
+        "inference_type": "explicit"
+      }
+    },
+    {
+      "node_id": "node_thinking_008",
+      "name": "Valid2中间恢复",
+      "type": "thought",
+      "description": "生成valid2中间恢复步骤：将信号状态恢复到valid(2)，设置CAN信号为最大值，为后续out-of-range测试做准备",
+      "inputs": [
+        "parsed_signal",
+        "mapping_rules"
+      ],
+      "outputs": [
+        "test_parameters",
+        "diagnostics_types"
+      ],
+      "config": {
+        "prompt_template": "生成valid2测试步骤：tag='valid2', test_param_m_state=2(valid), 设置CAN信号为有效范围内的最大值，根据mapping_rule映射为对应的内部信号值",
+        "current_phase": "valid2",
+        "node_subtype": "generation",
+        "input_schema_detail": {
+          "fields": [
+            {
+              "name": "parsed_signal",
+              "type": "object",
+              "required": true,
+              "description": "解析后的信号信息"
+            },
+            {
+              "name": "mapping_rules",
+              "type": "array",
+              "required": true,
+              "description": "映射规则列表"
+            }
+          ]
+        },
+        "output_schema_detail": {
+          "fields": [
+            {
+              "name": "test_parameters",
+              "type": "array",
+              "required": true,
+              "description": "生成的valid2测试参数"
+            },
+            {
+              "name": "diagnostics_types",
+              "type": "array",
+              "required": false,
+              "description": "诊断信息"
+            }
+          ]
+        },
+        "source_text": "valid2: 用例teardown操作，信号状态设置为valid状态，设置can信号最大值",
+        "inference_type": "explicit"
+      }
+    },
+    {
+      "node_id": "node_control_005",
+      "name": "OutOfRange适用性路由",
+      "type": "control",
+      "description": "比较bit_length计算的物理范围与用户输入的range_min/range_max，判断out-of-range测试是否适用",
+      "inputs": [
+        "out_of_range_applicable"
+      ],
+      "outputs": [
+        "route_decision"
+      ],
+      "config": {
+        "conditions": [
+          {
+            "expression": "out_of_range_applicable == true",
+            "target": "node_thinking_009",
+            "label": "execute_out_of_range"
+          },
+          {
+            "expression": "out_of_range_applicable == false",
+            "target": "node_thinking_010",
+            "label": "skip_out_of_range"
+          }
+        ],
+        "comparison_logic": "bit_length范围 = [0, 2^bit_length-1] × factor + offset; 若等于用户输入range_min到range_max则不适用",
+        "node_subtype": "condition_node",
+        "input_schema_detail": {
+          "fields": [
+            {
+              "name": "out_of_range_applicable",
+              "type": "boolean",
+              "required": true,
+              "description": "out-of-range是否适用"
+            }
+          ]
+        },
+        "output_schema_detail": {
+          "fields": [
+            {
+              "name": "route_decision",
+              "type": "string",
+              "required": true,
+              "description": "路由决策：skip_out_of_range或execute_out_of_range"
+            }
+          ]
+        },
+        "source_text": "bit_length计算得到的物理范围等于range min到range max则跳过",
+        "inference_type": "explicit"
+      }
+    },
+    {
+      "node_id": "node_thinking_009",
+      "name": "NotUpdate越界生成器",
+      "type": "thought",
+      "description": "生成notUpdate2越界测试步骤：设置CAN信号值为超出用户定义range范围但仍在DBC范围内的值，验证内部信号状态变为notUpdate(3)",
+      "inputs": [
+        "parsed_signal",
+        "valid_values"
+      ],
+      "outputs": [
+        "test_parameters",
+        "diagnostics_types"
+      ],
+      "config": {
+        "prompt_template": "生成notUpdate2越界测试步骤：tag='notUpdate2', 设置CAN信号值为超出range_min到range_max范围但仍在DBC物理范围内的值，test_param_m_state=3(notUpdate), 记录越界值和预期行为到diagnostics",
+        "current_phase": "notUpdate2",
+        "node_subtype": "generation",
+        "input_schema_detail": {
+          "fields": [
+            {
+              "name": "parsed_signal",
+              "type": "object",
+              "required": true,
+              "description": "解析后的信号信息"
+            },
+            {
+              "name": "valid_values",
+              "type": "array",
+              "required": true,
+              "description": "有效测试值列表"
+            }
+          ]
+        },
+        "output_schema_detail": {
+          "fields": [
+            {
+              "name": "test_parameters",
+              "type": "array",
+              "required": true,
+              "description": "生成的notUpdate2越界测试参数"
+            },
+            {
+              "name": "diagnostics_types",
+              "type": "array",
+              "required": true,
+              "description": "越界测试相关的诊断信息"
+            }
+          ]
+        },
+        "source_text": "notUpdate2: can signal out of range触发notUpdate逻辑",
+        "inference_type": "explicit"
+      }
+    },
+    {
+      "node_id": "node_thinking_010",
+      "name": "最终Teardown",
+      "type": "thought",
+      "description": "生成最终teardown步骤：恢复信号状态为valid(2)，设置CAN信号为最小值，完成整个测试流程",
+      "inputs": [
+        "parsed_signal",
+        "mapping_rules"
+      ],
+      "outputs": [
+        "test_parameters",
+        "diagnostics_types"
+      ],
+      "config": {
+        "prompt_template": "生成teardown测试步骤：tag='teardown', test_param_m_state=2(valid), 设置CAN信号为有效范围内的最小值，根据mapping_rule映射为对应的内部信号值",
+        "current_phase": "teardown",
+        "node_subtype": "generation",
+        "input_schema_detail": {
+          "fields": [
+            {
+              "name": "parsed_signal",
+              "type": "object",
+              "required": true,
+              "description": "解析后的信号信息"
+            },
+            {
+              "name": "mapping_rules",
+              "type": "array",
+              "required": true,
+              "description": "映射规则列表"
+            }
+          ]
+        },
+        "output_schema_detail": {
+          "fields": [
+            {
+              "name": "test_parameters",
+              "type": "array",
+              "required": true,
+              "description": "生成的teardown测试参数"
+            },
+            {
+              "name": "diagnostics_types",
+              "type": "array",
+              "required": false,
+              "description": "诊断信息"
+            }
+          ]
+        },
+        "source_text": "teardown: 恢复信号状态设置为valid状态，设置can信号最小值",
+        "inference_type": "explicit"
+      }
+    },
+    {
+      "node_id": "node_thinking_011",
+      "name": "诊断信息生成器",
+      "type": "thought",
+      "description": "汇总所有前序节点产生的诊断信息，补充整体推断、疑问和建议，确保所有推断过程中的疑点被记录到diagnostics_types",
+      "inputs": [
+        "diagnostics_types",
+        "parsed_signal",
+        "test_parameters"
+      ],
+      "outputs": [
+        "diagnostics_types"
+      ],
+      "config": {
+        "prompt_template": "汇总诊断信息：1) 检查是否存在mapping_rule未覆盖的有效范围内的值 2) 检查内部枚举定义与mapping_rule的不一致 3) 检查自然语言备注中的隐含信息 4) 对所有推断补充type(inference/question/suggestion)和description",
+        "diagnostic_types": [
+          "inference",
+          "question",
+          "suggestion"
+        ],
+        "node_subtype": "generation",
+        "input_schema_detail": {
+          "fields": [
+            {
+              "name": "diagnostics_types",
+              "type": "array",
+              "required": true,
+              "description": "累积的诊断信息列表"
+            },
+            {
+              "name": "parsed_signal",
+              "type": "object",
+              "required": true,
+              "description": "解析后的信号信息"
+            },
+            {
+              "name": "test_parameters",
+              "type": "array",
+              "required": true,
+              "description": "生成的测试参数列表"
+            }
+          ]
+        },
+        "output_schema_detail": {
+          "fields": [
+            {
+              "name": "diagnostics_types",
+              "type": "array",
+              "required": true,
+              "description": "完整的诊断信息列表"
+            }
+          ]
+        },
+        "source_text": "可追溯：所有推断过程中的疑点、建议必须记录在diagnostics_types",
+        "inference_type": "implicit"
+      }
+    },
+    {
+      "node_id": "node_control_006",
+      "name": "输出格式化",
+      "type": "control",
+      "description": "将test_parameters和diagnostics_types组装为标准JSON输出格式，确保无Markdown标记、无解释文字、所有字段有值",
+      "inputs": [
+        "test_parameters",
+        "diagnostics_types"
+      ],
+      "outputs": [
+        "final_output"
+      ],
+      "config": {
+        "output_format": {
+          "test_parameters": "array of test step objects",
+          "diagnostics_types": "array of diagnostic objects with type and description"
+        },
+        "validation_rules": [
+          "必须返回JSON对象（非数组）",
+          "禁止Markdown代码块标记",
+          "禁止任何解释性文字",
+          "所有字段必须有值（null或[]可接受）",
+          "test_parameters中每个元素必须包含tag/test_param_m_value/test_param_m_state/test_param_phy_value/test_param_raw_value"
+        ],
+        "node_subtype": "output_node",
+        "input_schema_detail": {
+          "fields": [
+            {
+              "name": "test_parameters",
+              "type": "array",
+              "required": true,
+              "description": "完整的测试参数列表"
+            },
+            {
+              "name": "diagnostics_types",
+              "type": "array",
+              "required": true,
+              "description": "完整的诊断信息列表"
+            }
+          ]
+        },
+        "output_schema_detail": {
+          "fields": [
+            {
+              "name": "final_output",
+              "type": "object",
+              "required": true,
+              "description": "最终输出的JSON对象，包含test_parameters和diagnostics_types两个顶层字段"
+            }
+          ]
+        },
+        "source_text": "必须返回JSON对象（非数组），禁止Markdown代码块标记",
+        "inference_type": "implicit"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "node_control_001",
+      "target": "node_thinking_001",
+      "condition": null,
+      "type": "sequential"
+    },
+    {
+      "source": "node_thinking_001",
+      "target": "node_control_002",
+      "condition": null,
+      "type": "sequential"
+    },
+    {
+      "source": "node_control_002",
+      "target": "node_thinking_002",
+      "condition": "can_signal_exists == false",
+      "type": "conditional"
+    },
+    {
+      "source": "node_control_002",
+      "target": "node_control_003",
+      "condition": "can_signal_exists == true",
+      "type": "conditional"
+    },
+    {
+      "source": "node_control_003",
+      "target": "node_thinking_003",
+      "condition": "is_timestamp_signal == true",
+      "type": "conditional"
+    },
+    {
+      "source": "node_control_003",
+      "target": "node_thinking_004",
+      "condition": "is_timestamp_signal == false",
+      "type": "conditional"
+    },
+    {
+      "source": "node_thinking_004",
+      "target": "node_thinking_005",
+      "condition": null,
+      "type": "sequential"
+    },
+    {
+      "source": "node_thinking_005",
+      "target": "node_thinking_006",
+      "condition": null,
+      "type": "sequential"
+    },
+    {
+      "source": "node_thinking_006",
+      "target": "node_control_004",
+      "condition": null,
+      "type": "sequential"
+    },
+    {
+      "source": "node_control_004",
+      "target": "node_thinking_007",
+      "condition": "has_error_condition == true",
+      "type": "conditional"
+    },
+    {
+      "source": "node_control_004",
+      "target": "node_thinking_008",
+      "condition": "has_error_condition == false",
+      "type": "conditional"
+    },
+    {
+      "source": "node_thinking_007",
+      "target": "node_thinking_008",
+      "condition": null,
+      "type": "sequential"
+    },
+    {
+      "source": "node_thinking_008",
+      "target": "node_control_005",
+      "condition": null,
+      "type": "sequential"
+    },
+    {
+      "source": "node_control_005",
+      "target": "node_thinking_009",
+      "condition": "out_of_range_applicable == true",
+      "type": "conditional"
+    },
+    {
+      "source": "node_control_005",
+      "target": "node_thinking_010",
+      "condition": "out_of_range_applicable == false",
+      "type": "conditional"
+    },
+    {
+      "source": "node_thinking_009",
+      "target": "node_thinking_010",
+      "condition": null,
+      "type": "sequential"
+    },
+    {
+      "source": "node_thinking_002",
+      "target": "node_thinking_011",
+      "condition": null,
+      "type": "sequential"
+    },
+    {
+      "source": "node_thinking_003",
+      "target": "node_thinking_011",
+      "condition": null,
+      "type": "sequential"
+    },
+    {
+      "source": "node_thinking_010",
+      "target": "node_thinking_011",
+      "condition": null,
+      "type": "sequential"
+    },
+    {
+      "source": "node_thinking_011",
+      "target": "node_control_006",
+      "condition": null,
+      "type": "sequential"
+    }
+  ],
+  "state": [
+    {
+      "field_name": "raw_input",
+      "type": "object",
+      "default_value": null,
+      "description": "原始输入JSON信号配置对象",
+      "required": true
+    },
+    {
+      "field_name": "validated_input",
+      "type": "object",
+      "default_value": null,
+      "description": "验证通过后的输入JSON",
+      "required": true
+    },
+    {
+      "field_name": "parsed_signal",
+      "type": "object",
+      "default_value": null,
+      "description": "解析后的信号结构化信息（含signal_name, base_data_type, initial_value, can_params等）",
+      "required": true
+    },
+    {
+      "field_name": "signal_type",
+      "type": "string",
+      "default_value": null,
+      "description": "信号类型：enum或physical",
+      "required": true
+    },
+    {
+      "field_name": "can_signal_exists",
+      "type": "boolean",
+      "default_value": null,
+      "description": "CAN信号是否存在",
+      "required": true
+    },
+    {
+      "field_name": "is_timestamp_signal",
+      "type": "boolean",
+      "default_value": null,
+      "description": "信号名是否以Timestamp结尾",
+      "required": true
+    },
+    {
+      "field_name": "has_error_condition",
+      "type": "boolean",
+      "default_value": null,
+      "description": "error_state_trigged_condition是否已定义且非空",
+      "required": true
+    },
+    {
+      "field_name": "out_of_range_applicable",
+      "type": "boolean",
+      "default_value": null,
+      "description": "out-of-range测试是否适用（bit_length范围不等于range范围）",
+      "required": true
+    },
+    {
+      "field_name": "mapping_rules",
+      "type": "array",
+      "default_value": null,
+      "description": "解析后的映射规则列表，每条含can_raw_value和internal_value",
+      "required": true
+    },
+    {
+      "field_name": "valid_values",
+      "type": "array",
+      "default_value": null,
+      "description": "有效测试值列表，根据信号类型和映射规则计算",
+      "required": true
+    },
+    {
+      "field_name": "test_parameters",
+      "type": "array",
+      "default_value": null,
+      "description": "逐步累积的测试参数列表，每步包含tag/m_value/m_state/phy_value/raw_value",
+      "required": true
+    },
+    {
+      "field_name": "diagnostics_types",
+      "type": "array",
+      "default_value": null,
+      "description": "逐步累积的诊断信息列表，每条含type和description",
+      "required": false
+    },
+    {
+      "field_name": "current_phase",
+      "type": "string",
+      "default_value": null,
+      "description": "当前测试阶段标识（setup/valid/notUpdate-timeout/senderError/valid2/notUpdate2/teardown）",
+      "required": false
+    },
+    {
+      "field_name": "final_output",
+      "type": "object",
+      "default_value": null,
+      "description": "最终输出的标准JSON对象，包含test_parameters和diagnostics_types",
+      "required": true
+    }
+  ],
+  "config": {
+    "timeout": 300000,
+    "max_retries": 3,
+    "enable_checkpoint": true,
+    "enable_logging": true,
+    "signal_state_enum": {
+      "notProvided": 0,
+      "init": 1,
+      "valid": 2,
+      "notUpdate": 3,
+      "senderError": 4
+    },
+    "calculation_rules": {
+      "raw_value_range": "min_raw=0, max_raw=2^bit_length-1",
+      "physical_value_conversion": "phy_value = raw_value × factor + offset",
+      "default_factor_offset": "factor=1.0, offset=0"
+    },
+    "mapping_rules": {
+      "enum": "严格匹配internal_enum_def和mapping_rule",
+      "physical": "按转换规则处理，注意单位换算（如kph↔m/s除以3.6）"
+    },
+    "test_notation": {
+      "signal_not_sent": -1,
+      "signal_not_sent_meaning": "将CAN信号主要信号值设为[-1]代表不发送该信号"
+    },
+    "entry_point": "node_control_001",
+    "finish_point": "node_control_006",
+    "source_input": "汽车电子软件测试工程师角色提示词，定义ECU内部信号与外部CAN信号一致性测试的完整流程，包括数值计算规则、映射处理、信号状态机(valid/notUpdate/senderError)、测试用例执行过程和输出规范"
+  }
+}

@@ -1,0 +1,66 @@
+{
+  "workflow_name": "ECU信号一致性测试参数生成",
+  "total_cases": 5,
+  "passed": 4,
+  "failed": 1,
+  "skipped": 0,
+  "errors": 0,
+  "pass_rate": 80.0,
+  "execution_time": 0.5046262741088867,
+  "test_results": [
+    {
+      "case_id": "normal_001",
+      "status": "passed",
+      "execution_time": 0.10070180892944336,
+      "actual_outputs": {
+        "result": "模拟执行成功"
+      },
+      "error_message": "",
+      "timestamp": "2026-04-23T14:33:03.025642Z"
+    },
+    {
+      "case_id": "normal_002",
+      "status": "passed",
+      "execution_time": 0.10107970237731934,
+      "actual_outputs": {
+        "result": "模拟执行成功"
+      },
+      "error_message": "",
+      "timestamp": "2026-04-23T14:33:03.126721Z"
+    },
+    {
+      "case_id": "edge_001",
+      "status": "failed",
+      "execution_time": 0.10084056854248047,
+      "actual_outputs": {},
+      "error_message": "模拟执行失败（示例）",
+      "timestamp": "2026-04-23T14:33:03.227562Z"
+    },
+    {
+      "case_id": "edge_002",
+      "status": "passed",
+      "execution_time": 0.10098934173583984,
+      "actual_outputs": {
+        "result": "模拟执行成功"
+      },
+      "error_message": "",
+      "timestamp": "2026-04-23T14:33:03.328551Z"
+    },
+    {
+      "case_id": "error_001",
+      "status": "passed",
+      "execution_time": 0.10101485252380371,
+      "actual_outputs": {
+        "result": "模拟执行成功"
+      },
+      "error_message": "",
+      "timestamp": "2026-04-23T14:33:03.429566Z"
+    }
+  ],
+  "issues": [
+    "用例 edge_001 执行失败: 模拟执行失败（示例）"
+  ],
+  "suggestions": [
+    "检查失败用例的预期输出是否合理"
+  ]
+}

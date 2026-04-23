@@ -291,7 +291,7 @@ graph.add_edge("ExistingNode", "MyNewNode")
 
 ```bash
 # 1. 生成新项目（从用户描述）
-python run_pdca.py --input "我要创建一个数据分析工作流..."
+python run.py --input "我要创建一个数据分析工作流..."
 
 # 2. 进入生成的项目
 cd examples/output/iteration_3

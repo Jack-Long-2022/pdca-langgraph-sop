@@ -157,7 +157,13 @@ CODE_PROMPT = """为以下LangGraph工作流生成完整的可执行Python代码
 3. 构建 StateGraph 并添加节点和边
 4. 包 compile() 调用
 5. 处理异常情况
-6. 代码要健壮，无硬编码"""
+6. 代码要健壮，无硬编码
+
+import约束（严格遵守）：
+- from langgraph.graph import StateGraph, END, START
+- 不要import langgraph.prebuilt中的任何内容（当前版本不含create_reducer等函数）
+- 不要import当前项目中不存在的模块
+- 仅使用 typing, json, logging, datetime, enum 等标准库"""
 
 TEST_PROMPT = """为以下工作流生成验收标准和测试用例。
 
